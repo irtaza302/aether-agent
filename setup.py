@@ -8,8 +8,8 @@ def parse_requirements(filename):
 
 setup(
     name="aether-cli",
-    version="1.1.0",
-    description="Aether AI Coding Agent",
+    version="2.0.0",
+    description="Aether AI Agent — A professional-grade AI coding assistant for your terminal.",
     py_modules=["aether"],
     install_requires=parse_requirements("requirements.txt"),
     entry_points={
