@@ -10,11 +10,11 @@ setup(
     name="aether-ai-cli",
     version="2.0.1",
     description="Aether AI Agent — A professional-grade AI coding assistant for your terminal.",
-    py_modules=["aether"],
+    packages=["aether"],
     install_requires=parse_requirements("requirements.txt"),
     entry_points={
         "console_scripts": [
-            "aether=aether:main",
+            "aether=aether.main:main",
         ],
     },
 )
