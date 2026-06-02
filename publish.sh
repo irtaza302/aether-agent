@@ -51,4 +51,36 @@ else
 fi
 
 echo ""
+echo "----------------------------------------"
+echo "📦 4. Tagging Release & Updating Homebrew"
+echo "----------------------------------------"
+VERSION=$(python3 -c "import aether; print(aether.__version__)")
+TAG="v$VERSION"
+
+if git rev-parse "$TAG" >/dev/null 2>&1; then
+    echo "⚠️ Tag $TAG already exists, skipping git tagging."
+else
+    echo "Pushing tag $TAG..."
+    git tag "$TAG"
+    git push origin "$TAG"
+    
+    echo "Updating Homebrew formula..."
+    # Wait a few seconds for GitHub to make the tarball available
+    sleep 3
+    URL="https://github.com/irtaza302/aether-agent/archive/refs/tags/${TAG}.tar.gz"
+    SHA256=$(curl -sL "$URL" | shasum -a 256 | awk '{print $1}')
+    
+    cd homebrew-aether
+    # Update formula on macOS using sed -i ''
+    sed -i '' "s|url \".*\"|url \"${URL}\"|" Formula/aether.rb
+    sed -i '' "s/sha256 \".*\"/sha256 \"${SHA256}\"/" Formula/aether.rb
+    sed -i '' "s/version \".*\"/version \"${VERSION}\"/" Formula/aether.rb
+    
+    git commit -am "chore: Update formula to ${VERSION}" || true
+    git push origin main || true
+    cd ..
+    echo "✅ Homebrew formula updated."
+fi
+
+echo ""
 echo "🎉 Done! Everything has been prepared/published."

@@ -175,7 +175,8 @@ def _do_update_check(config: dict):
                 console.print(
                     f"\n[bold magenta]🔔 Update available:[/bold magenta] v{VERSION} → v{latest}"
                 )
-                console.print("[dim]Run: pip install -U aether-ai-cli[/dim]\n")
+                console.print("[dim]Run: pip install -U aether-ai-cli (or brew upgrade aether)[/dim]")
+                console.print("[dim]Then restart Aether to use the new version![/dim]\n")
     except Exception:
         pass  # Silently fail — never block the user
 
@@ -193,9 +194,10 @@ def check_for_updates(config: dict | None = None):
         cached = config.get("_latest_version")
         if cached and cached != VERSION:
             console.print(
-                f"[bold magenta]🔔 Update available:[/bold magenta] v{VERSION} → v{cached}"
+                f"\n[bold magenta]🔔 Update available:[/bold magenta] v{VERSION} → v{cached}"
             )
-            console.print("[dim]Run: pip install -U aether-ai-cli[/dim]\n")
+            console.print("[dim]Run: pip install -U aether-ai-cli (or brew upgrade aether)[/dim]")
+            console.print("[dim]Then restart Aether to use the new version![/dim]\n")
         return
 
     thread = threading.Thread(target=_do_update_check, args=(config,), daemon=True)
