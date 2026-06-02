@@ -28,6 +28,8 @@ class MCPManager:
 
         # Initialize servers synchronously from caller's perspective
         try:
+            if self._loop is None:
+                raise RuntimeError("Event loop failed to initialize.")
             future = asyncio.run_coroutine_threadsafe(self._init_all_servers(), self._loop)
             future.result() # Wait for initialization
         except Exception as e:
@@ -107,6 +109,8 @@ class MCPManager:
             if full_tool_name.startswith(prefix):
                 tool_name = full_tool_name[len(prefix):]
                 try:
+                    if self._loop is None:
+                        return "Error: Event loop is not running."
                     future = asyncio.run_coroutine_threadsafe(
                         self._async_call_tool(server_name, tool_name, arguments), 
                         self._loop
