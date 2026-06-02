@@ -134,6 +134,29 @@ Aether stores its config in `~/.aether_config.json`:
 }
 ```
 
+### Model Context Protocol (MCP) Support
+
+Aether supports integrating with external [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) servers to extend its capabilities (e.g. connecting to local databases, searching the web, or accessing custom APIs).
+
+To configure MCP servers, add an `"mcp_servers"` block to your `~/.aether_config.json`:
+
+```json
+{
+  "mcp_servers": {
+    "sqlite": {
+      "command": "uvx",
+      "args": ["mcp-server-sqlite", "--db-path", "~/test.db"]
+    },
+    "everything": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-everything"]
+    }
+  }
+}
+```
+
+When you start Aether, it will automatically connect to these servers and make their tools available to the AI.
+
 Sessions are saved to `~/.aether_sessions/` and file backups to `~/.aether_backups/`.
 
 ## Publishing & Development

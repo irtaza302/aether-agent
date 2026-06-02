@@ -96,6 +96,11 @@ def load_config() -> dict:
     return {}
 
 
+def get_mcp_servers(config: dict) -> dict:
+    """Returns the configured MCP servers."""
+    return config.get("mcp_servers", {})
+
+
 def save_config(config: dict):
     try:
         with open(CONFIG_PATH, 'w') as f:

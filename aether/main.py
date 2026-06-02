@@ -31,12 +31,14 @@ from .config import (
     save_config,
     get_api_key,
     check_for_updates,
+    get_mcp_servers,
 )
 from .utils import TokenTracker, Struct
 from .session import save_session
 from .tools import tools, backup_manager, execute_tool
 from .commands import handle_slash_command, AetherCompleter
 from .context import ContextManager
+from .mcp import MCPManager
 
 
 # ─── Retry Configuration ───────────────────────────────────────────────────────
@@ -98,7 +100,7 @@ def parse_args():
     return parser.parse_args()
 
 
-def _create_api_stream(client, messages, model):
+def _create_api_stream(client, messages, model, active_tools):
     """
     Create a streaming API call with retry logic for transient errors.
     Returns the stream generator on success, raises on permanent failure.
@@ -110,7 +112,7 @@ def _create_api_stream(client, messages, model):
             stream = client.chat.completions.create(
                 model=model,
                 messages=messages,
-                tools=tools,
+                tools=active_tools,
                 tool_choice="auto",
                 stream=True,
                 stream_options={"include_usage": True},
@@ -169,6 +171,15 @@ def main():
     # Non-blocking update check (background thread, 24h cache)
     check_for_updates(config)
 
+    # Initialize MCP
+    mcp_servers_config = get_mcp_servers(config)
+    mcp_manager = MCPManager(mcp_servers_config)
+    if mcp_servers_config:
+        console.print("[dim]Initializing MCP servers...[/dim]")
+        mcp_manager.start()
+
+    active_tools = tools + mcp_manager.get_tools()
+
     # ── Header ──
     console.print(AETHER_ASCII)
     header = Text()
@@ -223,6 +234,10 @@ def main():
                         console.print("[dim]Session auto-saved.[/dim]")
                     except Exception:
                         pass
+                try:
+                    mcp_manager.stop()
+                except Exception:
+                    pass
                 console.print("[yellow]Goodbye! 👋[/yellow]")
                 break
 
@@ -278,7 +293,7 @@ def main():
                         refresh_per_second=8,
                     ) as live:
                         stream = _create_api_stream(
-                            client, messages, get_active_model()
+                            client, messages, get_active_model(), active_tools
                         )
 
                         api_usage = None
@@ -450,14 +465,22 @@ def main():
 
                 # Execute tool calls
                 for tc_dict in tool_calls_list:
-                    func_struct = Struct(**tc_dict["function"])
-                    tc_struct = Struct(
-                        id=tc_dict["id"],
-                        type=tc_dict["type"],
-                        function=func_struct,
-                    )
-
-                    tool_result = execute_tool(tc_struct, auto_approve)
+                    func_name = tc_dict["function"]["name"]
+                    
+                    if func_name.startswith("mcp_"):
+                        try:
+                            args = json.loads(tc_dict["function"]["arguments"])
+                            tool_result = mcp_manager.call_tool(func_name, args)
+                        except json.JSONDecodeError:
+                            tool_result = f"Error: Invalid JSON arguments for {func_name}."
+                    else:
+                        func_struct = Struct(**tc_dict["function"])
+                        tc_struct = Struct(
+                            id=tc_dict["id"],
+                            type=tc_dict["type"],
+                            function=func_struct,
+                        )
+                        tool_result = execute_tool(tc_struct, auto_approve)
 
                     messages.append(
                         {
@@ -495,6 +518,10 @@ def main():
                     console.print("\n[dim]Session auto-saved.[/dim]")
                 except Exception:
                     pass
+            try:
+                mcp_manager.stop()
+            except Exception:
+                pass
             console.print("[yellow]Goodbye! 👋[/yellow]")
             break
         except Exception as e:
