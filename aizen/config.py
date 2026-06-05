@@ -16,7 +16,7 @@ logger = logging.getLogger("aizen")
 
 # Read version from installed package metadata (stays in sync with pyproject.toml).
 # Falls back to a hardcoded value only when running from source without installing.
-_FALLBACK_VERSION = "2.2.0"
+_FALLBACK_VERSION = "2.2.1"
 try:
     VERSION = _pkg_version("aizen-ai-cli")
 except PackageNotFoundError:
@@ -27,11 +27,11 @@ BACKUPS_DIR = os.path.expanduser("~/.aizen_backups")
 DEFAULT_MODEL = "nvidia/nemotron-3-super-120b-a12b:free"
 
 AIZEN_ASCII = r"""[bold magenta]
-    ___       __  __               
-   /   | ___ / /_/ /_  ___  _____  
-  / /| |/ _ \ __/ __ \/ _ \/ ___/  
- / ___ /  __/ /_/ / / /  __/ /     
-/_/  |_\___/\__/_/ /_/\___/_/      
+    _    _               
+   / \  (_)_______ _ __  
+  / _ \ | |_  / _ \ '_ \ 
+ / ___ \| |/ /  __/ | | |
+/_/   \_\_/___\___|_| |_|
 [/bold magenta]
     [dim]by Irtaza Malik[/dim]
 """
