@@ -1,11 +1,11 @@
-"""Tests for aether.config module."""
+"""Tests for aizen.config module."""
 
 import os
 import json
 import pytest
 from unittest.mock import patch
 
-from aether.config import (
+from aizen.config import (
     VERSION,
     load_config,
     save_config,
@@ -28,7 +28,7 @@ class TestVersion:
             assert part.isdigit()
 
     def test_version_matches_init(self):
-        from aether import __version__
+        from aizen import __version__
         assert __version__ == VERSION
 
 
@@ -36,22 +36,25 @@ class TestConfig:
     """Tests for config loading and saving."""
 
     def test_load_config_nonexistent(self, tmp_dir, monkeypatch):
-        import aether.config
-        monkeypatch.setattr(aether.config, "CONFIG_PATH", os.path.join(tmp_dir, "nope.json"))
+        import aizen.config
+        monkeypatch.setattr(aizen.config, "CONFIG_PATH", os.path.join(tmp_dir, "nope.json"))
+        monkeypatch.setattr(aizen.config, "migrate_legacy_data", lambda: None)
         config = load_config()
         assert config == {}
 
     def test_load_config_existing(self, mock_config, monkeypatch):
-        import aether.config
-        monkeypatch.setattr(aether.config, "CONFIG_PATH", mock_config)
+        import aizen.config
+        monkeypatch.setattr(aizen.config, "CONFIG_PATH", mock_config)
+        monkeypatch.setattr(aizen.config, "migrate_legacy_data", lambda: None)
         config = load_config()
         assert config["OPENROUTER_API_KEY"] == "sk-test-key-1234"
         assert config["DEFAULT_MODEL"] == "test/model"
 
     def test_save_and_load_config(self, tmp_dir, monkeypatch):
-        import aether.config
+        import aizen.config
         config_path = os.path.join(tmp_dir, "test_config.json")
-        monkeypatch.setattr(aether.config, "CONFIG_PATH", config_path)
+        monkeypatch.setattr(aizen.config, "CONFIG_PATH", config_path)
+        monkeypatch.setattr(aizen.config, "migrate_legacy_data", lambda: None)
 
         config = {"key": "value", "number": 42}
         save_config(config)
@@ -61,9 +64,10 @@ class TestConfig:
         assert loaded["number"] == 42
 
     def test_load_corrupted_config(self, tmp_dir, monkeypatch):
-        import aether.config
+        import aizen.config
         config_path = os.path.join(tmp_dir, "bad.json")
-        monkeypatch.setattr(aether.config, "CONFIG_PATH", config_path)
+        monkeypatch.setattr(aizen.config, "CONFIG_PATH", config_path)
+        monkeypatch.setattr(aizen.config, "migrate_legacy_data", lambda: None)
 
         with open(config_path, "w") as f:
             f.write("not valid json {{{")

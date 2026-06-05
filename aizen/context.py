@@ -1,5 +1,5 @@
 """
-Context window management for Aether.
+Context window management for Aizen.
 
 Tracks token usage against model context limits and auto-compacts
 conversations when approaching the boundary.

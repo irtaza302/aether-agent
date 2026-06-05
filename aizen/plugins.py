@@ -5,7 +5,7 @@ from typing import Callable, Dict, Any, List
 
 from .logging_config import logger
 
-PLUGINS_DIR = os.path.expanduser("~/.aether/plugins")
+PLUGINS_DIR = os.path.expanduser("~/.aizen/plugins")
 
 class PluginManager:
     """Manages loading and executing tools from user-provided Python scripts."""
@@ -32,7 +32,7 @@ class PluginManager:
                     if spec and spec.loader:
                         module = importlib.util.module_from_spec(spec)
                         # Add to sys.modules so plugins can import each other if needed
-                        sys.modules[f"aether_plugin_{name}"] = module
+                        sys.modules[f"aizen_plugin_{name}"] = module
                         spec.loader.exec_module(module)
                         
                         if hasattr(module, "get_tools") and hasattr(module, "execute_tool"):

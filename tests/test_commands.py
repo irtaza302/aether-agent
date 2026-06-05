@@ -1,11 +1,11 @@
-"""Tests for aether.commands module."""
+"""Tests for aizen.commands module."""
 
 import os
 import pytest
 from unittest.mock import patch, MagicMock
 
-from aether.commands import handle_slash_command, AetherCompleter
-from aether.utils import TokenTracker
+from aizen.commands import handle_slash_command, AizenCompleter
+from aizen.utils import TokenTracker
 
 
 @pytest.mark.asyncio
@@ -30,7 +30,7 @@ class TestSlashCommands:
 
     async def test_model_switch(self):
         """Test /model with argument switches model."""
-        from aether.config import get_active_model, set_active_model
+        from aizen.config import get_active_model, set_active_model
         original = get_active_model()
         try:
             await handle_slash_command("/model test/new-model", [], TokenTracker())
@@ -135,10 +135,10 @@ class TestSlashCommands:
         assert os.path.exists(export_path)
         with open(export_path) as f:
             content = f.read()
-        assert "Aether" in content
+        assert "Aizen" in content
 
-    @patch("aether.commands.subprocess.run")
-    @patch("aether.commands.prompt")
+    @patch("aizen.commands.subprocess.run")
+    @patch("aizen.commands.prompt")
     async def test_commit_command(self, mock_prompt, mock_run):
         """Test /commit command calls git and API."""
         mock_prompt.return_value = "y"
@@ -169,11 +169,11 @@ class TestSlashCommands:
         mock_run.assert_any_call(["git", "commit", "-m", "feat: add test"], check=True)
 
 
-class TestAetherCompleter:
+class TestAizenCompleter:
     """Tests for the autocomplete system."""
 
     def test_slash_command_completion(self):
-        completer = AetherCompleter()
+        completer = AizenCompleter()
         # Create a mock document
         doc = MagicMock()
         doc.text_before_cursor = "/he"
@@ -184,7 +184,7 @@ class TestAetherCompleter:
 
     def test_slash_command_no_args_completion(self):
         """Should not complete after space (user is typing args)."""
-        completer = AetherCompleter()
+        completer = AizenCompleter()
         doc = MagicMock()
         doc.text_before_cursor = "/model "
 
@@ -192,7 +192,7 @@ class TestAetherCompleter:
         assert len(completions) == 0
 
     def test_no_completion_for_regular_text(self):
-        completer = AetherCompleter()
+        completer = AizenCompleter()
         doc = MagicMock()
         doc.text_before_cursor = "hello world"
 

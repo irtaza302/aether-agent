@@ -1,13 +1,13 @@
-"""Tests for aether.main module."""
+"""Tests for aizen.main module."""
 
 import pytest
 from unittest.mock import patch, MagicMock
-from aether.main import inject_file_context
+from aizen.main import inject_file_context
 
 class TestMain:
     """Tests for main.py."""
 
-    @patch("aether.main.subprocess.run")
+    @patch("aizen.main.subprocess.run")
     def test_inject_file_context_command(self, mock_run):
         # Setup mock for subprocess
         mock_result = MagicMock()
@@ -24,7 +24,7 @@ class TestMain:
         assert "hello world" in result
         assert "</command_context>" in result
 
-    @patch("aether.main.subprocess.run")
+    @patch("aizen.main.subprocess.run")
     def test_inject_file_context_command_with_stderr(self, mock_run):
         # Setup mock for subprocess
         mock_result = MagicMock()

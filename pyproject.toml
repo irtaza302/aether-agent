@@ -3,9 +3,9 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "aether-ai-cli"
+name = "aizen-ai-cli"
 version = "2.2.0"
-description = "Aether AI Agent — A professional-grade AI coding assistant for your terminal."
+description = "Aizen AI Agent — A professional-grade AI coding assistant for your terminal."
 readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.10"
@@ -47,15 +47,15 @@ dev = [
 ]
 
 [project.scripts]
-aether = "aether.main:main"
+aizen = "aizen.main:main"
 
 [project.urls]
-Homepage = "https://github.com/irtaza302/aether-agent"
-Repository = "https://github.com/irtaza302/aether-agent"
-Issues = "https://github.com/irtaza302/aether-agent/issues"
+Homepage = "https://github.com/irtaza302/aizen-agent"
+Repository = "https://github.com/irtaza302/aizen-agent"
+Issues = "https://github.com/irtaza302/aizen-agent/issues"
 
 [tool.setuptools.packages.find]
-include = ["aether*"]
+include = ["aizen*"]
 
 [tool.ruff]
 target-version = "py310"

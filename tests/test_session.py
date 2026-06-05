@@ -1,22 +1,22 @@
-"""Tests for aether.session module."""
+"""Tests for aizen.session module."""
 
 import os
 import json
 import pytest
 
-from aether.session import save_session, load_session, list_sessions
-from aether.utils import TokenTracker
+from aizen.session import save_session, load_session, list_sessions
+from aizen.utils import TokenTracker
 
 
 class TestSaveSession:
     """Tests for session saving."""
 
     def test_save_session_auto_name(self, tmp_dir, monkeypatch):
-        import aether.session
-        monkeypatch.setattr(aether.session, "SESSIONS_DIR", tmp_dir)
+        import aizen.session
+        monkeypatch.setattr(aizen.session, "SESSIONS_DIR", tmp_dir)
 
         messages = [
-            {"role": "system", "content": "You are Aether."},
+            {"role": "system", "content": "You are Aizen."},
             {"role": "user", "content": "Hello"},
             {"role": "assistant", "content": "Hi there!"},
         ]
@@ -25,16 +25,16 @@ class TestSaveSession:
         assert path.startswith("sqlite://")
 
     def test_save_session_custom_name(self, tmp_dir, monkeypatch):
-        import aether.session
-        monkeypatch.setattr(aether.session, "SESSIONS_DIR", tmp_dir)
+        import aizen.session
+        monkeypatch.setattr(aizen.session, "SESSIONS_DIR", tmp_dir)
 
         messages = [{"role": "user", "content": "test"}]
         path = save_session(messages, "my_session")
         assert path == "sqlite://my_session"
 
     def test_save_session_with_tracker(self, tmp_dir, monkeypatch):
-        import aether.session
-        monkeypatch.setattr(aether.session, "SESSIONS_DIR", tmp_dir)
+        import aizen.session
+        monkeypatch.setattr(aizen.session, "SESSIONS_DIR", tmp_dir)
 
         tracker = TokenTracker()
         tracker.add_usage(100, 50)
@@ -42,7 +42,7 @@ class TestSaveSession:
         messages = [{"role": "user", "content": "test"}]
         path = save_session(messages, "tracked", tracker)
 
-        conn = aether.session._get_db()
+        conn = aizen.session._get_db()
         cur = conn.execute("SELECT input_tokens, output_tokens FROM sessions WHERE name = 'tracked'")
         row = cur.fetchone()
         assert row is not None
@@ -50,8 +50,8 @@ class TestSaveSession:
         assert row[1] == 50
 
     def test_save_session_sanitizes_name(self, tmp_dir, monkeypatch):
-        import aether.session
-        monkeypatch.setattr(aether.session, "SESSIONS_DIR", tmp_dir)
+        import aizen.session
+        monkeypatch.setattr(aizen.session, "SESSIONS_DIR", tmp_dir)
 
         messages = [{"role": "user", "content": "test"}]
         path = save_session(messages, "my session/with:special*chars")
@@ -65,11 +65,11 @@ class TestLoadSession:
     """Tests for session loading."""
 
     def test_load_existing_session(self, tmp_dir, monkeypatch):
-        import aether.session
-        monkeypatch.setattr(aether.session, "SESSIONS_DIR", tmp_dir)
+        import aizen.session
+        monkeypatch.setattr(aizen.session, "SESSIONS_DIR", tmp_dir)
 
         messages = [
-            {"role": "system", "content": "You are Aether."},
+            {"role": "system", "content": "You are Aizen."},
             {"role": "user", "content": "Hello"},
         ]
         save_session(messages, "test_load")
@@ -80,8 +80,8 @@ class TestLoadSession:
         assert loaded[0]["role"] == "system"
 
     def test_load_nonexistent_session(self, tmp_dir, monkeypatch):
-        import aether.session
-        monkeypatch.setattr(aether.session, "SESSIONS_DIR", tmp_dir)
+        import aizen.session
+        monkeypatch.setattr(aizen.session, "SESSIONS_DIR", tmp_dir)
 
         result = load_session("nonexistent")
         assert result is None
@@ -91,15 +91,15 @@ class TestListSessions:
     """Tests for session listing."""
 
     def test_list_empty(self, tmp_dir, monkeypatch):
-        import aether.session
-        monkeypatch.setattr(aether.session, "SESSIONS_DIR", tmp_dir)
+        import aizen.session
+        monkeypatch.setattr(aizen.session, "SESSIONS_DIR", tmp_dir)
 
         sessions = list_sessions()
         assert sessions == []
 
     def test_list_sessions(self, tmp_dir, monkeypatch):
-        import aether.session
-        monkeypatch.setattr(aether.session, "SESSIONS_DIR", tmp_dir)
+        import aizen.session
+        monkeypatch.setattr(aizen.session, "SESSIONS_DIR", tmp_dir)
 
         save_session([{"role": "user", "content": "test 1"}], "session_a")
         save_session([{"role": "user", "content": "test 2"}], "session_b")
@@ -111,8 +111,8 @@ class TestListSessions:
         assert "session_b" in names
 
     def test_list_sessions_nonexistent_dir(self, monkeypatch):
-        import aether.session
-        monkeypatch.setattr(aether.session, "SESSIONS_DIR", "/nonexistent/path")
+        import aizen.session
+        monkeypatch.setattr(aizen.session, "SESSIONS_DIR", "/nonexistent/path")
 
         sessions = list_sessions()
         assert sessions == []

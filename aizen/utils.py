@@ -257,7 +257,7 @@ def fetch_url_content(url: str, timeout: int = 10) -> str:
     try:
         req = urllib.request.Request(
             url,
-            headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AetherAgent'}
+            headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AizenAgent'}
         )
         with urllib.request.urlopen(req, timeout=timeout) as response:
             content_type = response.headers.get_content_type()

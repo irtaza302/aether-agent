@@ -1,11 +1,11 @@
-"""Tests for aether.tools module."""
+"""Tests for aizen.tools module."""
 
 import os
 import json
 import pytest
 from unittest.mock import patch, MagicMock
 
-from aether.tools import (
+from aizen.tools import (
     read_file,
     write_file_with_diff,
     edit_file,
@@ -20,7 +20,7 @@ from aether.tools import (
     _try_repair_json,
     backup_manager,
 )
-from aether.utils import Struct
+from aizen.utils import Struct
 
 
 class TestReadFile:
@@ -63,12 +63,12 @@ class TestEditFile:
         result = edit_file(
             sample_file,
             'print("Hello, world!")',
-            'print("Hello, Aether!")',
+            'print("Hello, Aizen!")',
             auto_approve=True,
         )
         assert "✓" in result
         with open(sample_file) as f:
-            assert 'print("Hello, Aether!")' in f.read()
+            assert 'print("Hello, Aizen!")' in f.read()
 
     def test_edit_nonexistent_file(self, tmp_dir):
         result = edit_file(
@@ -135,7 +135,7 @@ class TestEditFile:
         edit_file(
             sample_file,
             'print("Hello, world!")',
-            'print("Hello, Aether!")',
+            'print("Hello, Aizen!")',
             auto_approve=True,
         )
         assert len(backup_manager.undo_stack) > initial_stack
@@ -239,7 +239,7 @@ class TestRunCommand:
             os.chdir(old_cwd)
 
     def test_run_command_background(self):
-        from aether.tools import check_background_task_impl, kill_background_task_impl
+        from aizen.tools import check_background_task_impl, kill_background_task_impl
         # Start a background task
         result = run_command_impl("sleep 10", auto_approve=True, background=True)
         assert "Task started in background with ID:" in result

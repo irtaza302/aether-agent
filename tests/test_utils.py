@@ -1,4 +1,4 @@
-"""Tests for aether.utils module."""
+"""Tests for aizen.utils module."""
 
 import os
 import time
@@ -6,7 +6,7 @@ import pytest
 import shutil
 import tempfile
 
-from aether.utils import (
+from aizen.utils import (
     TokenTracker,
     BackupManager,
     truncate_output,
@@ -98,9 +98,9 @@ class TestBackupManager:
         os.makedirs(backup_dir)
 
         # Monkey-patch BACKUPS_DIR
-        import aether.utils
-        original_dir = aether.utils.BACKUPS_DIR
-        aether.utils.BACKUPS_DIR = backup_dir
+        import aizen.utils
+        original_dir = aizen.utils.BACKUPS_DIR
+        aizen.utils.BACKUPS_DIR = backup_dir
 
         try:
             manager = BackupManager()
@@ -115,7 +115,7 @@ class TestBackupManager:
             assert backup_path is not None
             assert os.path.exists(backup_path)
         finally:
-            aether.utils.BACKUPS_DIR = original_dir
+            aizen.utils.BACKUPS_DIR = original_dir
 
     def test_backup_nonexistent_file(self):
         manager = BackupManager()
@@ -132,9 +132,9 @@ class TestBackupManager:
         backup_dir = os.path.join(tmp_dir, "backups")
         os.makedirs(backup_dir)
 
-        import aether.utils
-        original_dir = aether.utils.BACKUPS_DIR
-        aether.utils.BACKUPS_DIR = backup_dir
+        import aizen.utils
+        original_dir = aizen.utils.BACKUPS_DIR
+        aizen.utils.BACKUPS_DIR = backup_dir
 
         try:
             manager = BackupManager()
@@ -157,7 +157,7 @@ class TestBackupManager:
             with open(filepath) as f:
                 assert f.read() == "original"
         finally:
-            aether.utils.BACKUPS_DIR = original_dir
+            aizen.utils.BACKUPS_DIR = original_dir
 
 
 class TestTruncateOutput:
@@ -259,7 +259,7 @@ class TestGenerateDirectoryTree:
     """Tests for directory tree generation."""
 
     def test_generate_directory_tree(self, sample_dir):
-        from aether.utils import generate_directory_tree
+        from aizen.utils import generate_directory_tree
         
         # sample_dir has:
         # src/main.py, src/utils.py

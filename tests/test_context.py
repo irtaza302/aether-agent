@@ -1,8 +1,8 @@
-"""Tests for aether.context module."""
+"""Tests for aizen.context module."""
 
 import pytest
 
-from aether.context import ContextManager, MODEL_CONTEXT_WINDOWS, DEFAULT_CONTEXT_WINDOW
+from aizen.context import ContextManager, MODEL_CONTEXT_WINDOWS, DEFAULT_CONTEXT_WINDOW
 
 
 class TestContextManager:

@@ -1,6 +1,6 @@
-# Aether AI Agent 🚀
+# Aizen AI Agent 🚀
 
-A professional-grade AI coding assistant that runs directly in your terminal. Aether reads your code, writes files with surgical precision, runs commands safely, and helps you build faster — all from a beautifully designed CLI.
+A professional-grade AI coding assistant that runs directly in your terminal. Aizen reads your code, writes files with surgical precision, runs commands safely, and helps you build faster — all from a beautifully designed CLI.
 
 ## ✨ Features
 
@@ -9,12 +9,12 @@ A professional-grade AI coding assistant that runs directly in your terminal. Ae
 - **Rich Markdown Rendering** — AI responses are rendered with full Markdown formatting (headers, code blocks, lists, bold/italic) via Rich's live display.
 - **Streaming with Live Preview** — Watch responses render in real-time inside a styled panel with an animated thinking spinner.
 - **Surgical File Editing** — The `edit_file` tool makes precise search-and-replace edits with color-coded diff previews, instead of rewriting entire files.
-- **SQLite Session Persistence** — Session storage is powered by a SQLite database (`~/.aether_sessions/aether.db`), auto-migrating older JSON sessions.
-- **Project-Specific Rules** — Customizes agent behavior per repository by auto-loading `.aether_rules` or `.cursorrules` from the current working directory.
+- **SQLite Session Persistence** — Session storage is powered by a SQLite database (`~/.aizen_sessions/aizen.db`), auto-migrating older JSON sessions.
+- **Project-Specific Rules** — Customizes agent behavior per repository by auto-loading `.aizen_rules` or `.cursorrules` from the current working directory.
 - **Smart Autocomplete** — `@`-mention files with Tab completion that respects `.gitignore` and supports directory traversal.
 
 ### Tools
-Aether has 9 built-in tools the AI can use:
+Aizen has 9 built-in tools the AI can use:
 
 | Tool | Description |
 |------|-------------|
@@ -53,12 +53,12 @@ Aether has 9 built-in tools the AI can use:
 ### Safety & UX
 - **Command Safety** — Read-only commands (`ls`, `cat`, `git status`, etc.) auto-execute. Destructive commands (`rm`, `sudo`, etc.) always require confirmation.
 - **`--yolo` Mode** — Auto-approve all operations for power users.
-- **Background Tasks** — Run builds, tests, or other long-running tasks asynchronously while continuing to interact with Aether.
+- **Background Tasks** — Run builds, tests, or other long-running tasks asynchronously while continuing to interact with Aizen.
 - **File Backups** — Every file modification creates a backup. Use `/undo` to restore.
 - **Multi-line Input** — End a line with `\` to continue on the next line.
 - **Session Persistence** — Conversations auto-save on exit to SQLite. Use `/save` and `/load` to manage.
 - **Cost Tracking & Token Usage** — Live tracking of input/output tokens, session duration, and estimated session cost in USD.
-- **Structured Logging** — Rotated file logging at `~/.aether_logs/aether.log` plus verbose console debugging logs via `--verbose`.
+- **Structured Logging** — Rotated file logging at `~/.aizen_logs/aizen.log` plus verbose console debugging logs via `--verbose`.
 - **Graceful Error Recovery** — Helpful hints for common API errors (invalid key, rate limits, timeouts).
 
 ## Dependencies
@@ -72,37 +72,37 @@ Aether has 9 built-in tools the AI can use:
 
 ### 1. Python (pip / pipx) — Recommended
 ```bash
-pipx install aether-ai-cli
+pipx install aizen-ai-cli
 # Or:
-pip install aether-ai-cli
+pip install aizen-ai-cli
 ```
 
 ### 2. NPM (Node.js)
 ```bash
-npm install -g aether-ai-cli
+npm install -g aizen-ai-cli
 ```
 
 ### 3. Homebrew (macOS)
 ```bash
-brew tap irtaza302/aether-agent
-brew install aether
+brew tap irtaza302/aizen-agent
+brew install aizen
 ```
 
 ### 4. Local Development
 ```bash
-git clone https://github.com/irtaza302/aether-agent.git
-cd aether-agent
+git clone https://github.com/irtaza302/aizen-agent.git
+cd aizen-agent
 pip install -r requirements.txt
-python aether.py
+python aizen.py
 ```
 
 ## Usage
 
 ```bash
-aether
+aizen
 ```
 
-On first launch, you'll be prompted for your [OpenRouter API key](https://openrouter.ai/keys). It's saved securely to `~/.aether_config.json`.
+On first launch, you'll be prompted for your [OpenRouter API key](https://openrouter.ai/keys). It's saved securely to `~/.aizen_config.json`.
 
 ### Command Line Arguments
 
@@ -117,16 +117,16 @@ On first launch, you'll be prompted for your [OpenRouter API key](https://openro
 
 ### Attaching Context (`@`)
 
-Type `@` followed by a filename, directory, web URL, or command to give Aether context. Autocomplete filters out `.gitignore`d files:
+Type `@` followed by a filename, directory, web URL, or command to give Aizen context. Autocomplete filters out `.gitignore`d files:
 
-- **Files:** `@aether.py` attaches the file contents.
+- **Files:** `@aizen.py` attaches the file contents.
 - **Directories:** `@tests/` generates and attaches a visual directory tree respecting `.gitignore`.
 - **URLs:** `@https://docs.python.org/...` fetches the webpage, converts it to markdown, and attaches it.
 - **Commands:** `@cmd:"pytest"` or `@cmd:ls` securely runs the command in the background and injects its `stdout` and `stderr` directly into the prompt.
 
 ```
 👤 You
-❯ Can you refactor @aether.py to use async?
+❯ Can you refactor @aizen.py to use async?
 
 👤 You
 ❯ Explain this output: @cmd:"npm run build"
@@ -145,7 +145,7 @@ End a line with `\` to continue typing on the next line:
 
 ## Configuration
 
-Aether stores its config in `~/.aether_config.json`:
+Aizen stores its config in `~/.aizen_config.json`:
 
 ```json
 {
@@ -157,9 +157,9 @@ Aether stores its config in `~/.aether_config.json`:
 
 ### Model Context Protocol (MCP) Support
 
-Aether supports integrating with external [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) servers to extend its capabilities (e.g. connecting to local databases, searching the web, or accessing custom APIs).
+Aizen supports integrating with external [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) servers to extend its capabilities (e.g. connecting to local databases, searching the web, or accessing custom APIs).
 
-To configure MCP servers, add an `"mcp_servers"` block to your `~/.aether_config.json`:
+To configure MCP servers, add an `"mcp_servers"` block to your `~/.aizen_config.json`:
 
 ```json
 {
@@ -176,31 +176,31 @@ To configure MCP servers, add an `"mcp_servers"` block to your `~/.aether_config
 }
 ```
 
-When you start Aether, it will automatically connect to these servers and make their tools available to the AI.
+When you start Aizen, it will automatically connect to these servers and make their tools available to the AI.
 
-Sessions are saved in a SQLite database at `~/.aether_sessions/aether.db`, and file backups are placed in `~/.aether_backups/`.
+Sessions are saved in a SQLite database at `~/.aizen_sessions/aizen.db`, and file backups are placed in `~/.aizen_backups/`.
 
 ### 📂 Project-Specific Rules
 
-Aether supports loading custom, project-specific rules files (such as `.aether_rules` or `.cursorrules`) from the root of your project directory. 
-When Aether starts, it checks for these files in the current working directory in the following order:
-1. `.aether_rules`
+Aizen supports loading custom, project-specific rules files (such as `.aizen_rules` or `.cursorrules`) from the root of your project directory. 
+When Aizen starts, it checks for these files in the current working directory in the following order:
+1. `.aizen_rules`
 2. `.cursorrules`
 
-If one is found, Aether automatically appends its contents to the system prompt. This allows you to enforce codebase-specific styling guidelines, coding standards, or project rules without editing Aether's global configuration.
+If one is found, Aizen automatically appends its contents to the system prompt. This allows you to enforce codebase-specific styling guidelines, coding standards, or project rules without editing Aizen's global configuration.
 
 ### 🔄 Background Task Management
 
 For long-running processes (e.g., running test suites, starting local dev servers, or building bundles), you can run commands in the background asynchronously:
-- Aether's `run_command` tool supports a boolean `background` parameter. If set to `true`, the tool immediately returns a unique `task_id` (e.g., `bg_a1b2c3d4`).
+- Aizen's `run_command` tool supports a boolean `background` parameter. If set to `true`, the tool immediately returns a unique `task_id` (e.g., `bg_a1b2c3d4`).
 - You can inspect the status and read the recent stdout/stderr output of a background task using the `check_background_task` tool.
 - You can terminate any active background task using the `kill_background_task` tool.
 
-This allows you to continue discussing other topics or refactoring files with Aether while your tests or builds run in parallel.
+This allows you to continue discussing other topics or refactoring files with Aizen while your tests or builds run in parallel.
 
 ### 💰 Cost Tracking
 
-Aether dynamically estimates session costs in USD for known models based on token usage:
+Aizen dynamically estimates session costs in USD for known models based on token usage:
 - Input and output tokens are tracked in real-time.
 - The estimated session cost is displayed in the CLI status bar and summary tables (via the `/usage` command).
 - The cost calculations support popular models from Anthropic (Claude 3.5/3.7 Sonnet, Opus, Haiku), Google (Gemini 2.5 Pro/Flash), and OpenAI (GPT-4o, o1, o3-mini).
@@ -216,9 +216,9 @@ This is extremely useful when experimenting with different implementation approa
 ### 📝 Structured Logging
 
 All internal activities, tool calls, and API events are written to a rotating file logger:
-- Logs are located at `~/.aether_logs/aether.log`.
+- Logs are located at `~/.aizen_logs/aizen.log`.
 - Up to three rotated log files are kept (5 MB per file limit).
-- You can run Aether with the `--verbose` flag to mirror log output directly to the console stderr stream.
+- You can run Aizen with the `--verbose` flag to mirror log output directly to the console stderr stream.
 
 ## Publishing & Development
 

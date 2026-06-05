@@ -1,46 +1,46 @@
 """
-Aether custom exception hierarchy.
+Aizen custom exception hierarchy.
 
-All Aether-specific errors inherit from AetherError, enabling
+All Aizen-specific errors inherit from AizenError, enabling
 typed error handling and user-friendly error messages.
 """
 
 
-class AetherError(Exception):
-    """Base exception for all Aether errors."""
+class AizenError(Exception):
+    """Base exception for all Aizen errors."""
     pass
 
 
-class APIKeyError(AetherError):
+class APIKeyError(AizenError):
     """Raised when the API key is missing, invalid, or rejected (HTTP 401)."""
     pass
 
 
-class APIConnectionError(AetherError):
+class APIConnectionError(AizenError):
     """Raised when the API is unreachable or the request times out."""
     pass
 
 
-class RateLimitError(AetherError):
+class RateLimitError(AizenError):
     """Raised when the API returns HTTP 429 (rate limited)."""
     pass
 
 
-class ToolExecutionError(AetherError):
+class ToolExecutionError(AizenError):
     """Raised when a tool fails to execute properly."""
     pass
 
 
-class FileOperationError(AetherError):
+class FileOperationError(AizenError):
     """Raised when a file read/write/edit operation fails."""
     pass
 
 
-class SessionCorruptedError(AetherError):
+class SessionCorruptedError(AizenError):
     """Raised when a session file cannot be loaded or is malformed."""
     pass
 
 
-class ContextWindowExceededError(AetherError):
+class ContextWindowExceededError(AizenError):
     """Raised when the conversation exceeds the model's context window."""
     pass

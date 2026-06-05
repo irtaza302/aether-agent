@@ -17,7 +17,7 @@ from .utils import TokenTracker
 
 def _get_db() -> sqlite3.Connection:
     os.makedirs(SESSIONS_DIR, exist_ok=True)
-    db_path = os.path.join(SESSIONS_DIR, "aether.db")
+    db_path = os.path.join(SESSIONS_DIR, "aizen.db")
     conn = sqlite3.connect(db_path)
     conn.execute('''
         CREATE TABLE IF NOT EXISTS sessions (

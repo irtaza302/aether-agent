@@ -7,14 +7,14 @@ def parse_requirements(filename):
         return [line.strip() for line in f if line.strip() and not line.startswith('#')]
 
 setup(
-    name="aether-ai-cli",
-    version="2.0.1",
-    description="Aether AI Agent — A professional-grade AI coding assistant for your terminal.",
-    packages=["aether"],
+    name="aizen-ai-cli",
+    version="2.2.0",
+    description="Aizen AI Agent — A professional-grade AI coding assistant for your terminal.",
+    packages=["aizen"],
     install_requires=parse_requirements("requirements.txt"),
     entry_points={
         "console_scripts": [
-            "aether=aether.main:main",
+            "aizen=aizen.main:main",
         ],
     },
 )

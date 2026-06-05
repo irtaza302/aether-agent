@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Aether AI Agent v2.1 — A professional-grade AI coding assistant for your terminal.
+Aizen AI Agent v2.1 — A professional-grade AI coding assistant for your terminal.
 """
 
 import os
@@ -23,7 +23,7 @@ from rich.live import Live
 
 from .config import (
     VERSION,
-    AETHER_ASCII,
+    AIZEN_ASCII,
     SYSTEM_PROMPT,
     build_system_prompt,
     console,
@@ -38,7 +38,7 @@ from .config import (
 from .utils import TokenTracker, Struct, fetch_url_content, generate_directory_tree
 from .session import save_session
 from .tools import tools, backup_manager, execute_tool
-from .commands import handle_slash_command, AetherCompleter
+from .commands import handle_slash_command, AizenCompleter
 from .context import ContextManager
 from .mcp import MCPManager
 from .plugins import plugin_manager
@@ -118,7 +118,7 @@ def inject_file_context(user_input: str) -> str:
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="Aether AI Agent — A professional-grade AI coding assistant."
+        description="Aizen AI Agent — A professional-grade AI coding assistant."
     )
     parser.add_argument("--version", action="store_true", help="Show version.")
     parser.add_argument("--model", type=str, help="Override the default model.")
@@ -158,12 +158,12 @@ async def main_loop():
     args = parse_args()
 
     if args.version:
-        print(f"Aether v{VERSION}")
+        print(f"Aizen v{VERSION}")
         sys.exit(0)
 
     # Initialize structured logging (file + optional console)
     setup_logging(verbose=getattr(args, "verbose", False))
-    logger.info("Aether starting v%s", VERSION)
+    logger.info("Aizen starting v%s", VERSION)
 
     config = load_config()
 
@@ -204,7 +204,7 @@ async def main_loop():
     active_tools = tools + mcp_manager.get_tools() + plugin_manager.get_tools()
 
     # ── Header ──
-    console.print(AETHER_ASCII)
+    console.print(AIZEN_ASCII)
     header = Text()
     header.append(f"v{VERSION}", style="bold magenta")
     header.append("  │  ", style="dim")
@@ -224,7 +224,7 @@ async def main_loop():
     def _(event):
         event.current_buffer.complete_state = None
 
-    session: PromptSession = PromptSession(completer=AetherCompleter(), key_bindings=kb)
+    session: PromptSession = PromptSession(completer=AizenCompleter(), key_bindings=kb)
 
     messages = [{"role": "system", "content": build_system_prompt(config)}]
 
@@ -339,7 +339,7 @@ async def main_loop():
                                 try:
                                     rendered = Panel(
                                         Markdown(full_content),
-                                        title="[bold magenta]✦ Aether[/bold magenta]",
+                                        title="[bold magenta]✦ Aizen[/bold magenta]",
                                         border_style="magenta",
                                         padding=(1, 2),
                                     )
@@ -349,7 +349,7 @@ async def main_loop():
                                     live.update(
                                         Panel(
                                             Text(full_content),
-                                            title="[bold magenta]✦ Aether[/bold magenta]",
+                                            title="[bold magenta]✦ Aizen[/bold magenta]",
                                             border_style="magenta",
                                             padding=(1, 2),
                                         )

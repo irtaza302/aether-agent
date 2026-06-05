@@ -1,7 +1,7 @@
 import pytest
 import asyncio
 from unittest.mock import MagicMock, AsyncMock, patch
-from aether.mcp import MCPManager
+from aizen.mcp import MCPManager
 
 @pytest.fixture
 def mock_mcp_config():
@@ -13,8 +13,8 @@ def mock_mcp_config():
     }
 
 @pytest.mark.asyncio
-@patch("aether.mcp.ClientSession")
-@patch("aether.mcp.stdio_client")
+@patch("aizen.mcp.ClientSession")
+@patch("aizen.mcp.stdio_client")
 async def test_mcp_manager_start_and_tools(mock_stdio_client, mock_client_session, mock_mcp_config):
     mock_transport = (AsyncMock(), AsyncMock())
     
@@ -47,8 +47,8 @@ async def test_mcp_manager_start_and_tools(mock_stdio_client, mock_client_sessio
     await manager.stop()
 
 @pytest.mark.asyncio
-@patch("aether.mcp.ClientSession")
-@patch("aether.mcp.stdio_client")
+@patch("aizen.mcp.ClientSession")
+@patch("aizen.mcp.stdio_client")
 async def test_mcp_manager_call_tool(mock_stdio_client, mock_client_session, mock_mcp_config):
     mock_transport = (AsyncMock(), AsyncMock())
     mock_stdio_cm = AsyncMock()

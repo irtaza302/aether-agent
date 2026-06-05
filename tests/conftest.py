@@ -1,4 +1,4 @@
-"""Shared test fixtures for Aether test suite."""
+"""Shared test fixtures for Aizen test suite."""
 
 import os
 import json

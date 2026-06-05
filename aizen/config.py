@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 from rich.console import Console
 import logging
 
-logger = logging.getLogger("aether")
+logger = logging.getLogger("aizen")
 
 # ─── Constants ──────────────────────────────────────────────────────────────────
 
@@ -18,15 +18,15 @@ logger = logging.getLogger("aether")
 # Falls back to a hardcoded value only when running from source without installing.
 _FALLBACK_VERSION = "2.2.0"
 try:
-    VERSION = _pkg_version("aether-ai-cli")
+    VERSION = _pkg_version("aizen-ai-cli")
 except PackageNotFoundError:
     VERSION = _FALLBACK_VERSION
-CONFIG_PATH = os.path.expanduser("~/.aether_config.json")
-SESSIONS_DIR = os.path.expanduser("~/.aether_sessions")
-BACKUPS_DIR = os.path.expanduser("~/.aether_backups")
+CONFIG_PATH = os.path.expanduser("~/.aizen_config.json")
+SESSIONS_DIR = os.path.expanduser("~/.aizen_sessions")
+BACKUPS_DIR = os.path.expanduser("~/.aizen_backups")
 DEFAULT_MODEL = "nvidia/nemotron-3-super-120b-a12b:free"
 
-AETHER_ASCII = r"""[bold magenta]
+AIZEN_ASCII = r"""[bold magenta]
     ___       __  __               
    /   | ___ / /_/ /_  ___  _____  
   / /| |/ _ \ __/ __ \/ _ \/ ___/  
@@ -55,7 +55,7 @@ DANGEROUS_PATTERNS = [
 ]
 
 SYSTEM_PROMPT = """\
-You are Aether, an expert AI coding assistant running in a user's terminal. \
+You are Aizen, an expert AI coding assistant running in a user's terminal. \
 You help users write, debug, understand, and refactor code with precision and care.
 
 ## Your Workflow
@@ -86,15 +86,15 @@ console = Console()
 
 
 # Project-level rules files (checked in order, first found wins)
-_PROJECT_RULES_FILES = [".aether_rules", ".cursorrules"]
+_PROJECT_RULES_FILES = [".aizen_rules", ".cursorrules"]
 
 
 def build_system_prompt(config: dict | None = None) -> str:
     """
     Build the final system prompt by merging:
     1. Default SYSTEM_PROMPT
-    2. User override from ~/.aether_config.json ("system_prompt" key)
-    3. Project-specific rules from .aether_rules or .cursorrules in CWD
+    2. User override from ~/.aizen_config.json ("system_prompt" key)
+    3. Project-specific rules from .aizen_rules or .cursorrules in CWD
 
     This allows per-project customization without modifying source code.
     """
@@ -137,7 +137,28 @@ def get_active_model() -> str:
 
 # ─── Configuration ──────────────────────────────────────────────────────────────
 
+import shutil
+
+def migrate_legacy_data():
+    """Migrate legacy Aether config/sessions to Aizen."""
+    legacy_config = os.path.expanduser("~/.aether_config.json")
+    if os.path.exists(legacy_config) and not os.path.exists(CONFIG_PATH):
+        try:
+            shutil.copy2(legacy_config, CONFIG_PATH)
+            console.print("[dim]Migrated legacy config to ~/.aizen_config.json[/dim]")
+        except Exception as e:
+            logger.debug(f"Failed to migrate config: {e}")
+            
+    legacy_sessions = os.path.expanduser("~/.aether_sessions")
+    if os.path.exists(legacy_sessions) and not os.path.exists(SESSIONS_DIR):
+        try:
+            shutil.copytree(legacy_sessions, SESSIONS_DIR)
+            console.print("[dim]Migrated legacy sessions to ~/.aizen_sessions[/dim]")
+        except Exception as e:
+            logger.debug(f"Failed to migrate sessions: {e}")
+
 def load_config() -> dict:
+    migrate_legacy_data()
     if os.path.exists(CONFIG_PATH):
         try:
             with open(CONFIG_PATH, 'r') as f:
@@ -174,8 +195,8 @@ def get_api_key(config: dict, reset: bool = False) -> str:
     if env_key and env_key != "your_api_key_here":
         return env_key
 
-    console.print(AETHER_ASCII)
-    console.print("[bold]Welcome to Aether![/bold]\n")
+    console.print(AIZEN_ASCII)
+    console.print("[bold]Welcome to Aizen![/bold]\n")
     console.print("To get started, enter your OpenRouter API key.")
     console.print("[dim](Get one free at https://openrouter.ai/keys)[/dim]\n")
 
@@ -208,8 +229,8 @@ def _do_update_check(config: dict):
     and print a notice if an update is available.
     """
     try:
-        url = "https://pypi.org/pypi/aether-ai-cli/json"
-        req = urllib.request.Request(url, headers={"User-Agent": "aether-ai-cli"})
+        url = "https://pypi.org/pypi/aizen-ai-cli/json"
+        req = urllib.request.Request(url, headers={"User-Agent": "aizen-ai-cli"})
         with urllib.request.urlopen(req, timeout=3) as response:
             data = json.loads(response.read().decode())
             latest = data["info"]["version"]
@@ -226,8 +247,8 @@ def _do_update_check(config: dict):
                 console.print(
                     f"\n[bold magenta]🔔 Update available:[/bold magenta] v{VERSION} → v{latest}"
                 )
-                console.print("[dim]Run: pip install -U aether-ai-cli (or brew upgrade aether)[/dim]")
-                console.print("[dim]Then restart Aether to use the new version![/dim]\n")
+                console.print("[dim]Run: pip install -U aizen-ai-cli (or brew upgrade aizen)[/dim]")
+                console.print("[dim]Then restart Aizen to use the new version![/dim]\n")
     except Exception as e:
         logger.debug("Update check failed (network/parsing): %s", e)
 
@@ -247,8 +268,8 @@ def check_for_updates(config: dict | None = None):
             console.print(
                 f"\n[bold magenta]🔔 Update available:[/bold magenta] v{VERSION} → v{cached}"
             )
-            console.print("[dim]Run: pip install -U aether-ai-cli (or brew upgrade aether)[/dim]")
-            console.print("[dim]Then restart Aether to use the new version![/dim]\n")
+            console.print("[dim]Run: pip install -U aizen-ai-cli (or brew upgrade aizen)[/dim]")
+            console.print("[dim]Then restart Aizen to use the new version![/dim]\n")
         return
 
     thread = threading.Thread(target=_do_update_check, args=(config,), daemon=True)

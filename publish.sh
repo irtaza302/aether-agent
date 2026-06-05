@@ -6,7 +6,7 @@ if [ -d "venv" ]; then
     source venv/bin/activate
 fi
 
-echo "🚀 Starting the Aether release process..."
+echo "🚀 Starting the Aizen release process..."
 
 echo "----------------------------------------"
 echo "📦 1. Building and Publishing to PyPI"
@@ -38,12 +38,12 @@ echo "----------------------------------------"
 echo "📦 3. Building macOS Binary (for Homebrew/Github)"
 echo "----------------------------------------"
 if command -v pyinstaller &> /dev/null; then
-    pyinstaller aether.spec
+    pyinstaller aizen.spec
     cd dist
-    tar -czvf aether-macos.tar.gz aether
-    echo "✅ macOS binary built at dist/aether-macos.tar.gz"
-    echo "   (To update Homebrew, calculate the shasum with 'shasum -a 256 dist/aether-macos.tar.gz')"
-    echo "   (Then update the sha256 and url in homebrew-aether/Formula/aether.rb)"
+    tar -czvf aizen-macos.tar.gz aizen
+    echo "✅ macOS binary built at dist/aizen-macos.tar.gz"
+    echo "   (To update Homebrew, calculate the shasum with 'shasum -a 256 dist/aizen-macos.tar.gz')"
+    echo "   (Then update the sha256 and url in homebrew-aizen/Formula/aizen.rb)"
     cd ..
 else
     echo "⚠️ PyInstaller not found. Skipping binary build."
@@ -54,7 +54,7 @@ echo ""
 echo "----------------------------------------"
 echo "📦 4. Tagging Release & Updating Homebrew"
 echo "----------------------------------------"
-VERSION=$(python3 -c "import aether; print(aether.__version__)")
+VERSION=$(python3 -c "import aizen; print(aizen.__version__)")
 TAG="v$VERSION"
 
 if git rev-parse "$TAG" >/dev/null 2>&1; then
@@ -67,14 +67,14 @@ else
     echo "Updating Homebrew formula..."
     # Wait a few seconds for GitHub to make the tarball available
     sleep 3
-    URL="https://github.com/irtaza302/aether-agent/archive/refs/tags/${TAG}.tar.gz"
+    URL="https://github.com/irtaza302/aizen-agent/archive/refs/tags/${TAG}.tar.gz"
     SHA256=$(curl -sL "$URL" | shasum -a 256 | awk '{print $1}')
     
-    cd homebrew-aether
+    cd homebrew-aizen
     # Update formula on macOS using sed -i ''
-    sed -i '' "s|url \".*\"|url \"${URL}\"|" Formula/aether.rb
-    sed -i '' "s/sha256 \".*\"/sha256 \"${SHA256}\"/" Formula/aether.rb
-    sed -i '' "s/version \".*\"/version \"${VERSION}\"/" Formula/aether.rb
+    sed -i '' "s|url \".*\"|url \"${URL}\"|" Formula/aizen.rb
+    sed -i '' "s/sha256 \".*\"/sha256 \"${SHA256}\"/" Formula/aizen.rb
+    sed -i '' "s/version \".*\"/version \"${VERSION}\"/" Formula/aizen.rb
     
     git commit -am "chore: Update formula to ${VERSION}" || true
     git push origin main || true

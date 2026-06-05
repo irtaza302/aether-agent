@@ -45,7 +45,7 @@ SLASH_COMMANDS = [
 _checkpoints: dict[str, list] = {}
 
 
-class AetherCompleter(Completer):
+class AizenCompleter(Completer):
     """Autocomplete for both slash commands (/) and file mentions (@)."""
 
     def __init__(self):
@@ -184,7 +184,7 @@ async def handle_slash_command(
 
     elif cmd == "/help":
         help_table = Table(
-            title="⚡ Aether Commands",
+            title="⚡ Aizen Commands",
             border_style="magenta",
             show_header=True,
             header_style="bold magenta",
@@ -209,7 +209,7 @@ async def handle_slash_command(
         help_table.add_row("/mcp", "View configured MCP servers and their status")
         help_table.add_row("", "")
         help_table.add_row("@filename / @url", "Attach file context or web URL")
-        help_table.add_row("exit / quit", "Exit Aether")
+        help_table.add_row("exit / quit", "Exit Aizen")
         help_table.add_row("", "")
         help_table.add_row("[dim]Tip[/dim]", "[dim]End a line with \\\\ for multi-line input[/dim]")
         console.print(help_table)
@@ -307,11 +307,11 @@ async def handle_slash_command(
         filename = (
             arg
             if arg
-            else f"aether_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md"
+            else f"aizen_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md"
         )
         try:
             with open(filename, "w") as f:
-                f.write("# Aether Conversation Export\n\n")
+                f.write("# Aizen Conversation Export\n\n")
                 f.write(
                     f"**Date:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
                 )
@@ -322,7 +322,7 @@ async def handle_slash_command(
                     elif msg["role"] == "user":
                         f.write(f"## 👤 You\n\n{msg['content']}\n\n")
                     elif msg["role"] == "assistant" and msg.get("content"):
-                        f.write(f"## ✦ Aether\n\n{msg['content']}\n\n")
+                        f.write(f"## ✦ Aizen\n\n{msg['content']}\n\n")
             console.print(f"[green]✓ Exported to {filename}[/green]\n")
         except Exception as e:
             console.print(f"[red]Error exporting: {e}[/red]\n")
@@ -428,7 +428,7 @@ async def handle_slash_command(
             return False
             
         if not mcp_manager.config:
-            console.print("[yellow]No MCP servers configured in ~/.aether_config.json[/yellow]\n")
+            console.print("[yellow]No MCP servers configured in ~/.aizen_config.json[/yellow]\n")
             console.print("[dim]Add an 'mcp_servers' block to your config to enable MCP plugins.[/dim]\n")
             return False
             

@@ -1,7 +1,7 @@
 """
-Structured logging configuration for Aether.
+Structured logging configuration for Aizen.
 
-Provides a rotating file logger at ~/.aether_logs/aether.log plus
+Provides a rotating file logger at ~/.aizen_logs/aizen.log plus
 an optional console handler controlled by --verbose.
 """
 
@@ -11,24 +11,24 @@ from logging.handlers import RotatingFileHandler
 
 # ─── Constants ──────────────────────────────────────────────────────────────────
 
-LOG_DIR = os.path.expanduser("~/.aether_logs")
-LOG_FILE = os.path.join(LOG_DIR, "aether.log")
+LOG_DIR = os.path.expanduser("~/.aizen_logs")
+LOG_FILE = os.path.join(LOG_DIR, "aizen.log")
 MAX_LOG_BYTES = 5 * 1024 * 1024  # 5 MB per file
 BACKUP_COUNT = 3  # Keep 3 rotated log files
 
 # Module-level logger used throughout the application
-logger = logging.getLogger("aether")
+logger = logging.getLogger("aizen")
 
 
 def setup_logging(verbose: bool = False) -> logging.Logger:
     """
     Configure logging for the application.
 
-    - Always logs to ~/.aether_logs/aether.log (DEBUG level, rotating).
+    - Always logs to ~/.aizen_logs/aizen.log (DEBUG level, rotating).
     - When verbose=True, also logs DEBUG to stderr.
     - When verbose=False, only WARNING+ goes to stderr.
 
-    Returns the configured root "aether" logger.
+    Returns the configured root "aizen" logger.
     """
     os.makedirs(LOG_DIR, exist_ok=True)
 
@@ -61,5 +61,5 @@ def setup_logging(verbose: bool = False) -> logging.Logger:
     console_handler.setFormatter(console_fmt)
     logger.addHandler(console_handler)
 
-    logger.debug("Aether logging initialized (verbose=%s)", verbose)
+    logger.debug("Aizen logging initialized (verbose=%s)", verbose)
     return logger

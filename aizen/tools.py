@@ -369,7 +369,7 @@ def _check_git_dirty(filepath: str) -> None:
             console.print(
                 "\n  [bold yellow]⚠️  Git Safety Warning:[/bold yellow] "
                 "[yellow]You have uncommitted changes in this repository.[/yellow]\n"
-                "  [dim]Aether's modifications could mix with your uncommitted work.\n"
+                "  [dim]Aizen's modifications could mix with your uncommitted work.\n"
                 "  Consider committing or stashing your changes before proceeding.[/dim]\n"
             )
             _git_warned = True
@@ -461,7 +461,7 @@ def write_file_with_diff(filepath: str, content: str, auto_approve: bool = False
 
             console.print(
                 Panel(
-                    f"[bold magenta]Aether wants to overwrite:[/bold magenta] [cyan]{filepath}[/cyan]",
+                    f"[bold magenta]Aizen wants to overwrite:[/bold magenta] [cyan]{filepath}[/cyan]",
                     border_style="magenta",
                 )
             )
@@ -475,7 +475,7 @@ def write_file_with_diff(filepath: str, content: str, auto_approve: bool = False
 
             console.print(
                 Panel(
-                    f"[bold magenta]Aether wants to create:[/bold magenta] [cyan]{filepath}[/cyan]",
+                    f"[bold magenta]Aizen wants to create:[/bold magenta] [cyan]{filepath}[/cyan]",
                     border_style="magenta",
                 )
             )
@@ -571,7 +571,7 @@ def edit_file(filepath: str, old_content: str, new_content: str, auto_approve: b
 
         console.print(
             Panel(
-                f"[bold magenta]Aether wants to edit:[/bold magenta] [cyan]{filepath}[/cyan]",
+                f"[bold magenta]Aizen wants to edit:[/bold magenta] [cyan]{filepath}[/cyan]",
                 border_style="magenta",
             )
         )
@@ -635,7 +635,7 @@ def run_command_impl(command: str, auto_approve: bool = False, timeout: int = 12
     if not safe and not auto_approve:
         console.print(
             Panel(
-                f"[bold magenta]Aether wants to run:[/bold magenta]\n\n[white]{command}[/white]",
+                f"[bold magenta]Aizen wants to run:[/bold magenta]\n\n[white]{command}[/white]",
                 border_style="magenta",
             )
         )
