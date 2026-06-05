@@ -43,6 +43,24 @@ class TestSlashCommands:
         result = await handle_slash_command("/help", [], TokenTracker())
         assert result is False
 
+    async def test_drop_command(self):
+        """Test /drop removes context blocks from messages."""
+        messages = [
+            {"role": "system", "content": "system"},
+            {"role": "user", "content": "Here is a file: <file_context path=\"test.py\">print('hello')</file_context>"},
+            {"role": "user", "content": "Here is a url: <url_context url=\"http://example.com\">example text</url_context> and more text."},
+            {"role": "user", "content": "Here is a command: <command_context cmd=\"ls -l\">file1.txt</command_context>"},
+        ]
+        result = await handle_slash_command("/drop", messages, TokenTracker())
+        assert result is False
+        assert "print('hello')" not in messages[1]["content"]
+        assert "[File context dropped to save tokens]" in messages[1]["content"]
+        assert "example text" not in messages[2]["content"]
+        assert "[URL context dropped to save tokens]" in messages[2]["content"]
+        assert "and more text." in messages[2]["content"]
+        assert "file1.txt" not in messages[3]["content"]
+        assert "[Command context dropped to save tokens]" in messages[3]["content"]
+
     async def test_usage_command(self):
         """Test /usage runs without error."""
         tracker = TokenTracker()
@@ -118,6 +136,37 @@ class TestSlashCommands:
         with open(export_path) as f:
             content = f.read()
         assert "Aether" in content
+
+    @patch("aether.commands.subprocess.run")
+    @patch("aether.commands.prompt")
+    async def test_commit_command(self, mock_prompt, mock_run):
+        """Test /commit command calls git and API."""
+        mock_prompt.return_value = "y"
+        
+        # Mock git diff --cached returning a diff
+        mock_diff = MagicMock()
+        mock_diff.stdout = "diff --git a/test b/test"
+        mock_run.return_value = mock_diff
+        
+        # Mock client
+        class MockMessage:
+            content = "feat: add test"
+        class MockChoice:
+            message = MockMessage()
+        class MockResponse:
+            choices = [MockChoice()]
+        class MockCompletions:
+            async def create(self, **kwargs):
+                return MockResponse()
+        class MockChat:
+            completions = MockCompletions()
+        class MockClient:
+            chat = MockChat()
+            
+        result = await handle_slash_command("/commit", [], TokenTracker(), client=MockClient())
+        
+        assert result is False
+        mock_run.assert_any_call(["git", "commit", "-m", "feat: add test"], check=True)
 
 
 class TestAetherCompleter:

@@ -2,8 +2,10 @@ import os
 import copy
 import subprocess
 import platform
+import re
 from datetime import datetime
 from prompt_toolkit.completion import Completer, Completion
+from prompt_toolkit.shortcuts import prompt
 from rich.table import Table
 
 from .config import (
@@ -23,6 +25,7 @@ SLASH_COMMANDS = [
     ("/help", "Show all available commands"),
     ("/model", "View or switch the active model"),
     ("/clear", "Clear conversation history"),
+    ("/drop", "Drop attached files/URLs from history"),
     ("/save", "Save current conversation"),
     ("/load", "Load a saved conversation"),
     ("/usage", "Show token usage statistics"),
@@ -35,6 +38,7 @@ SLASH_COMMANDS = [
     ("/restore", "Restore a previously saved checkpoint"),
     ("/config", "View current configuration"),
     ("/mcp", "View configured MCP servers and their status"),
+    ("/commit", "Auto-generate and commit changes"),
 ]
 
 # In-memory checkpoint storage for conversation branching
@@ -117,7 +121,7 @@ class AetherCompleter(Completer):
 
 
 async def handle_slash_command(
-    command_str: str, messages: list, token_tracker: TokenTracker, mcp_manager=None
+    command_str: str, messages: list, token_tracker: TokenTracker, mcp_manager=None, client=None
 ) -> bool:
     """Handle slash commands. Returns True if the agent loop should re-process (e.g. /retry)."""
     parts = command_str.split(maxsplit=1)
@@ -130,6 +134,43 @@ async def handle_slash_command(
         if len(messages) > 1:
             messages[:] = [messages[0]]
         console.print("[green]✓ Conversation cleared.[/green]\n")
+
+    elif cmd == "/drop":
+        dropped_count = 0
+        for msg in messages:
+            if msg["role"] == "user" and msg.get("content"):
+                old_content = msg["content"]
+                new_content = re.sub(
+                    r'<file_context path="[^"]+">.*?</file_context>', 
+                    '[File context dropped to save tokens]', 
+                    old_content, 
+                    flags=re.DOTALL
+                )
+                new_content = re.sub(
+                    r'<url_context url="[^"]+">.*?</url_context>', 
+                    '[URL context dropped to save tokens]', 
+                    new_content, 
+                    flags=re.DOTALL
+                )
+                new_content = re.sub(
+                    r'<directory_context path="[^"]+">.*?</directory_context>', 
+                    '[Directory context dropped to save tokens]', 
+                    new_content, 
+                    flags=re.DOTALL
+                )
+                new_content = re.sub(
+                    r'<command_context cmd="[^"]+">.*?</command_context>', 
+                    '[Command context dropped to save tokens]', 
+                    new_content, 
+                    flags=re.DOTALL
+                )
+                if old_content != new_content:
+                    msg["content"] = new_content
+                    dropped_count += 1
+        if dropped_count > 0:
+            console.print(f"[green]✓ Dropped attached contexts from {dropped_count} past messages.[/green]\n")
+        else:
+            console.print("[yellow]No attached contexts found to drop.[/yellow]\n")
 
     elif cmd == "/model":
         if arg:
@@ -153,6 +194,7 @@ async def handle_slash_command(
         help_table.add_row("/help", "Show this help message")
         help_table.add_row("/model [name]", "View or switch the active model")
         help_table.add_row("/clear", "Clear conversation history")
+        help_table.add_row("/drop", "Drop attached files/URLs from history")
         help_table.add_row("/save [name]", "Save current conversation")
         help_table.add_row("/load [name]", "Load a saved conversation")
         help_table.add_row("/usage", "Show token usage statistics")
@@ -166,7 +208,7 @@ async def handle_slash_command(
         help_table.add_row("/config", "View current configuration")
         help_table.add_row("/mcp", "View configured MCP servers and their status")
         help_table.add_row("", "")
-        help_table.add_row("@filename", "Attach file context (with autocomplete)")
+        help_table.add_row("@filename / @url", "Attach file context or web URL")
         help_table.add_row("exit / quit", "Exit Aether")
         help_table.add_row("", "")
         help_table.add_row("[dim]Tip[/dim]", "[dim]End a line with \\\\ for multi-line input[/dim]")
@@ -462,6 +504,76 @@ async def handle_slash_command(
                 )
             else:
                 console.print(f"[red]Checkpoint '{arg}' not found.[/red]\n")
+
+    elif cmd == "/commit":
+        if not client:
+            console.print("[red]API client is not available for /commit.[/red]\n")
+            return False
+        
+        try:
+            # Check staged changes
+            result = subprocess.run(["git", "diff", "--cached"], capture_output=True, text=True, check=True)
+            diff = result.stdout.strip()
+            
+            if not diff:
+                # Check unstaged
+                result_unstaged = subprocess.run(["git", "diff"], capture_output=True, text=True, check=True)
+                unstaged_diff = result_unstaged.stdout.strip()
+                
+                if not unstaged_diff:
+                    console.print("[yellow]No changes found to commit.[/yellow]\n")
+                    return False
+                
+                answer = prompt("No staged changes. Stage all current changes? [Y/n] ")
+                if answer.lower() not in ("y", "yes", ""):
+                    console.print("[yellow]Commit aborted.[/yellow]\n")
+                    return False
+                
+                subprocess.run(["git", "add", "-u"], check=True)
+                result = subprocess.run(["git", "diff", "--cached"], capture_output=True, text=True, check=True)
+                diff = result.stdout.strip()
+                
+            if not diff:
+                console.print("[yellow]No changes staged to commit.[/yellow]\n")
+                return False
+                
+            console.print("[dim]Generating commit message...[/dim]")
+            
+            commit_messages = [
+                {"role": "system", "content": "You are a senior developer. Write a concise, conventional commit message for the following diff. Output ONLY the commit message, no explanation, no markdown blocks."},
+                {"role": "user", "content": f"Diff:\n{diff[:10000]}"}
+            ]
+            
+            response = await client.chat.completions.create(
+                model=MODEL,
+                messages=commit_messages,
+                max_tokens=200,
+            )
+            commit_msg = response.choices[0].message.content.strip()
+            # Remove any markdown codeblocks if model didn't listen
+            commit_msg = commit_msg.replace("```text", "").replace("```", "").strip()
+            
+            console.print("\n[bold]Generated Commit Message:[/bold]")
+            console.print(f"[cyan]{commit_msg}[/cyan]\n")
+            
+            action = prompt("Commit with this message? [Y/n/e(dit)] ")
+            action = action.lower().strip()
+            
+            if action in ("y", "yes", ""):
+                final_msg = commit_msg
+            elif action in ("e", "edit"):
+                final_msg = prompt("Edit message: ", default=commit_msg)
+            else:
+                console.print("[yellow]Commit aborted.[/yellow]\n")
+                return False
+                
+            subprocess.run(["git", "commit", "-m", final_msg], check=True)
+            console.print("[green]✓ Committed successfully.[/green]\n")
+            
+        except subprocess.CalledProcessError:
+            console.print("[red]Error: Not a git repository or git command failed.[/red]\n")
+        except Exception as e:
+            console.print(f"[red]Error during auto-commit: {e}[/red]\n")
 
     else:
         console.print(

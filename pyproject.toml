@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "aether-ai-cli"
-version = "2.1.2"
+version = "2.2.0"
 description = "Aether AI Agent — A professional-grade AI coding assistant for your terminal."
 readme = "README.md"
 license = {text = "MIT"}

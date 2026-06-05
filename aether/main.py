@@ -10,6 +10,7 @@ import json
 import random
 import argparse
 import asyncio
+import subprocess
 from prompt_toolkit import PromptSession
 from prompt_toolkit.formatted_text import HTML
 from prompt_toolkit.key_binding import KeyBindings
@@ -34,7 +35,7 @@ from .config import (
     check_for_updates,
     get_mcp_servers,
 )
-from .utils import TokenTracker, Struct
+from .utils import TokenTracker, Struct, fetch_url_content, generate_directory_tree
 from .session import save_session
 from .tools import tools, backup_manager, execute_tool
 from .commands import handle_slash_command, AetherCompleter
@@ -46,31 +47,69 @@ from .logging_config import setup_logging, logger
 
 
 def inject_file_context(user_input: str) -> str:
-    pattern = r"(?:^|\s)@([a-zA-Z0-9_\-\./]+)"
+    context_blocks = []
+    
+    # 1. Handle command injection (@cmd:"...")
+    cmd_pattern = r"(?:^|\s)@cmd:(?:\"([^\"]+)\"|\'([^\']+)\'|([^\s]+))"
+    cmd_matches = re.finditer(cmd_pattern, user_input)
+    for match in cmd_matches:
+        cmd = match.group(1) or match.group(2) or match.group(3)
+        if cmd:
+            console.print(f"  [dim]⚡ Executing: {cmd}[/dim]")
+            try:
+                result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=30)
+                output = result.stdout
+                if result.stderr:
+                    output += "\n--- STDERR ---\n" + result.stderr
+                if not output.strip():
+                    output = "[Command executed successfully with no output]"
+                context_blocks.append(
+                    f'<command_context cmd="{cmd}">\n{output}\n</command_context>'
+                )
+            except Exception as e:
+                console.print(f"  [dim yellow]⚠️  Command failed: {e}[/dim yellow]")
+
+    # 2. Handle standard file/url/directory injection
+    pattern = r"(?:^|\s)@(?!(?:cmd:))([a-zA-Z0-9_\-\./:?&=]+)"
     matches = re.findall(pattern, user_input)
-    if not matches:
+    if not matches and not context_blocks:
         return user_input
 
-    context_blocks = []
-    for filepath in set(matches):
-        if os.path.isfile(filepath):
+    for item in set(matches):
+        if item.startswith("http://") or item.startswith("https://"):
+            console.print(f"  [dim]🌐 Fetching: {item}[/dim]")
+            content = fetch_url_content(item)
+            if content.startswith("Error fetching URL:"):
+                console.print(f"  [dim yellow]⚠️  {content}[/dim yellow]")
+            else:
+                context_blocks.append(
+                    f'<url_context url="{item}">\n{content}\n</url_context>'
+                )
+        elif os.path.isfile(item):
             try:
-                with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
+                with open(item, "r", encoding="utf-8", errors="ignore") as f:
                     content = f.read()
                 context_blocks.append(
-                    f'<file_context path="{filepath}">\n{content}\n</file_context>'
+                    f'<file_context path="{item}">\n{content}\n</file_context>'
                 )
-                console.print(f"  [dim]📎 Attached: {filepath}[/dim]")
+                console.print(f"  [dim]📎 Attached: {item}[/dim]")
             except Exception as e:
                 console.print(
-                    f"  [dim yellow]⚠️  Failed to read {filepath}: {e}[/dim yellow]"
+                    f"  [dim yellow]⚠️  Failed to read {item}: {e}[/dim yellow]"
                 )
-        elif os.path.isdir(filepath):
-            console.print(
-                f"  [dim yellow]⚠️  '{filepath}' is a directory, not a file[/dim yellow]"
-            )
+        elif os.path.isdir(item):
+            try:
+                tree_output = generate_directory_tree(item)
+                context_blocks.append(
+                    f'<directory_context path="{item}">\n{tree_output}\n</directory_context>'
+                )
+                console.print(f"  [dim]📂 Attached directory tree: {item}[/dim]")
+            except Exception as e:
+                console.print(
+                    f"  [dim yellow]⚠️  Failed to read directory {item}: {e}[/dim yellow]"
+                )
         else:
-            console.print(f"  [dim yellow]⚠️  File not found: {filepath}[/dim yellow]")
+            console.print(f"  [dim yellow]⚠️  File not found: {item}[/dim yellow]")
 
     if context_blocks:
         user_input += "\n\n" + "\n".join(context_blocks)
@@ -231,7 +270,7 @@ async def main_loop():
             # ── Slash Commands ──
             if user_input.strip().startswith("/"):
                 should_retry = await handle_slash_command(
-                    user_input.strip(), messages, token_tracker, mcp_manager
+                    user_input.strip(), messages, token_tracker, mcp_manager, client
                 )
                 if should_retry and messages and messages[-1]["role"] == "user":
                     pass  # Fall through to the agent loop

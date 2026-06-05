@@ -2,6 +2,8 @@ import os
 import time
 import shutil
 import fnmatch
+import re
+import urllib.request
 from datetime import datetime
 from rich.table import Table
 
@@ -248,3 +250,69 @@ def should_ignore(path: str, patterns: list) -> bool:
         if fnmatch.fnmatch(path, clean_pattern):
             return True
     return False
+
+
+def fetch_url_content(url: str, timeout: int = 10) -> str:
+    """Fetch content from a URL and strip HTML tags if it's a webpage."""
+    try:
+        req = urllib.request.Request(
+            url,
+            headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AetherAgent'}
+        )
+        with urllib.request.urlopen(req, timeout=timeout) as response:
+            content_type = response.headers.get_content_type()
+            charset = response.headers.get_content_charset() or 'utf-8'
+            raw_data = response.read().decode(charset, errors='replace')
+            
+            if 'html' in content_type:
+                # Basic HTML stripping
+                # Remove script and style elements
+                text = re.sub(r'<(script|style)[^>]*>.*?</\1>', '', raw_data, flags=re.IGNORECASE | re.DOTALL)
+                # Remove HTML tags
+                text = re.sub(r'<[^>]+>', ' ', text)
+                # Unescape common HTML entities
+                text = text.replace('&nbsp;', ' ').replace('&lt;', '<').replace('&gt;', '>').replace('&amp;', '&').replace('&quot;', '"')
+                # Collapse whitespace
+                text = re.sub(r'\s+', ' ', text).strip()
+                return text
+            
+            return raw_data
+    except Exception as e:
+        return f"Error fetching URL: {e}"
+
+
+def generate_directory_tree(path: str) -> str:
+    """Generate a formatted text tree of a directory, respecting .gitignore."""
+    ignore_patterns = load_gitignore_patterns()
+    
+    lines = []
+    
+    def _walk(current_path: str, prefix: str = ""):
+        try:
+            entries = sorted(os.listdir(current_path))
+        except PermissionError:
+            lines.append(f"{prefix}[Permission Denied]")
+            return
+        
+        # Filter entries
+        valid_entries = []
+        for entry in entries:
+            full_path = os.path.join(current_path, entry)
+            if not should_ignore(full_path, ignore_patterns):
+                valid_entries.append((entry, full_path))
+                
+        for i, (entry, full_path) in enumerate(valid_entries):
+            is_last = i == (len(valid_entries) - 1)
+            connector = "└── " if is_last else "├── "
+            
+            if os.path.isdir(full_path):
+                lines.append(f"{prefix}{connector}{entry}/")
+                new_prefix = prefix + ("    " if is_last else "│   ")
+                _walk(full_path, new_prefix)
+            else:
+                lines.append(f"{prefix}{connector}{entry}")
+                
+    base_name = os.path.basename(os.path.abspath(path)) or path
+    lines.append(f"{base_name}/")
+    _walk(path)
+    return "\n".join(lines)

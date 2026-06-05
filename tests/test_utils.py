@@ -13,6 +13,7 @@ from aether.utils import (
     load_gitignore_patterns,
     should_ignore,
     Struct,
+    fetch_url_content,
 )
 
 
@@ -205,3 +206,80 @@ class TestGitignorePatterns:
     def test_should_not_ignore_py_files(self):
         patterns = ["*.pyc"]
         assert should_ignore("module.py", patterns) is False
+
+
+class TestFetchUrlContent:
+    """Tests for URL fetching."""
+
+    def test_fetch_plain_text(self, monkeypatch):
+        class MockResponse:
+            def __init__(self, data):
+                self.data = data
+                self.headers = self
+            def __enter__(self): return self
+            def __exit__(self, *args): pass
+            def get_content_type(self): return "text/plain"
+            def get_content_charset(self): return "utf-8"
+            def read(self): return self.data
+
+        def mock_urlopen(*args, **kwargs):
+            return MockResponse(b"Hello World")
+
+        import urllib.request
+        monkeypatch.setattr(urllib.request, "urlopen", mock_urlopen)
+
+        result = fetch_url_content("http://example.com")
+        assert result == "Hello World"
+
+    def test_fetch_html_strips_tags(self, monkeypatch):
+        class MockResponse:
+            def __init__(self, data):
+                self.data = data
+                self.headers = self
+            def __enter__(self): return self
+            def __exit__(self, *args): pass
+            def get_content_type(self): return "text/html"
+            def get_content_charset(self): return "utf-8"
+            def read(self): return self.data
+
+        def mock_urlopen(*args, **kwargs):
+            return MockResponse(b"<html><body><h1>Title</h1><script>alert(1);</script><p>Some text</p></body></html>")
+
+        import urllib.request
+        monkeypatch.setattr(urllib.request, "urlopen", mock_urlopen)
+
+        result = fetch_url_content("http://example.com")
+        assert "Title" in result
+        assert "Some text" in result
+        assert "<html>" not in result
+        assert "alert(1)" not in result
+
+
+class TestGenerateDirectoryTree:
+    """Tests for directory tree generation."""
+
+    def test_generate_directory_tree(self, sample_dir):
+        from aether.utils import generate_directory_tree
+        
+        # sample_dir has:
+        # src/main.py, src/utils.py
+        # tests/test_main.py
+        # .git/
+        # node_modules/pkg/
+        # README.md
+        # .gitignore
+
+        tree = generate_directory_tree(sample_dir)
+        
+        # Should contain valid files
+        assert "README.md" in tree
+        assert "src/" in tree
+        assert "main.py" in tree
+        assert "tests/" in tree
+        
+        # Should ignore node_modules and .git
+        # Check for directory representations to avoid matching ".gitignore"
+        assert ".git/" not in tree
+        assert "node_modules/" not in tree
+
+

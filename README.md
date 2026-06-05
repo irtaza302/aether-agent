@@ -35,11 +35,13 @@ Aether has 9 built-in tools the AI can use:
 | `/help` | Show all available commands |
 | `/model [name]` | View or switch the active AI model |
 | `/clear` | Clear conversation history |
+| `/drop` | Drop attached files/URLs/commands from history to save tokens |
 | `/save [name]` | Save current conversation to SQLite database |
 | `/load [name]` | Load a previously saved conversation |
 | `/checkpoint [name]` | Save a conversation snapshot to memory |
 | `/restore [name]` | Restore a saved conversation checkpoint |
 | `/usage` | Show token usage, estimated session cost (USD), and statistics |
+| `/commit` | Auto-generate a commit message for staged/unstaged changes and commit them |
 | `/compact` | Summarize older messages using AI (fallback to text-summarization) to save tokens |
 | `/undo` | Undo the last file modification |
 | `/retry` | Retry the last message |
@@ -113,13 +115,21 @@ On first launch, you'll be prompted for your [OpenRouter API key](https://openro
 | `--yolo` | Auto-approve all file writes and command executions |
 | `--verbose` | Enable verbose logging output to the console |
 
-### Attaching Files
+### Attaching Context (`@`)
 
-Type `@` followed by a filename to give Aether context. Autocomplete filters out `.gitignore`d files:
+Type `@` followed by a filename, directory, web URL, or command to give Aether context. Autocomplete filters out `.gitignore`d files:
+
+- **Files:** `@aether.py` attaches the file contents.
+- **Directories:** `@tests/` generates and attaches a visual directory tree respecting `.gitignore`.
+- **URLs:** `@https://docs.python.org/...` fetches the webpage, converts it to markdown, and attaches it.
+- **Commands:** `@cmd:"pytest"` or `@cmd:ls` securely runs the command in the background and injects its `stdout` and `stderr` directly into the prompt.
 
 ```
 👤 You
 ❯ Can you refactor @aether.py to use async?
+
+👤 You
+❯ Explain this output: @cmd:"npm run build"
 ```
 
 ### Multi-line Input

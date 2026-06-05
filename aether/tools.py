@@ -521,14 +521,28 @@ def edit_file(filepath: str, old_content: str, new_content: str, auto_approve: b
         # Check if old_content exists in the file
         occurrence_count = file_content.count(old_content)
         if occurrence_count == 0:
-            # Try with normalized whitespace as a hint
-            normalized_file = re.sub(r"[ \t]+", " ", file_content)
-            normalized_old = re.sub(r"[ \t]+", " ", old_content)
-            if normalized_old in normalized_file:
-                return (
-                    "Error: Exact match not found, but a similar block exists with different whitespace. "
-                    "Please re-read the file and use the exact text including whitespace."
-                )
+            # Attempt auto-healing by using a whitespace-agnostic regex
+            parts = re.split(r'\s+', old_content.strip())
+            escaped_parts = [re.escape(p) for p in parts if p]
+            if escaped_parts:
+                pattern_str = r'\s+'.join(escaped_parts)
+                try:
+                    matches = list(re.finditer(pattern_str, file_content))
+                    if len(matches) == 1:
+                        # Exactly one match found! Auto-heal
+                        actual_old = matches[0].group(0)
+                        old_content = actual_old
+                        console.print(f"  [dim yellow]⚡ Auto-healed whitespace mismatch in {os.path.basename(filepath)}[/dim yellow]")
+                        occurrence_count = 1
+                    elif len(matches) > 1:
+                        return (
+                            f"Error: Exact match not found, and fuzzy match found {len(matches)} occurrences. "
+                            "Please be more specific."
+                        )
+                except Exception as e:
+                    logger.debug("Auto-heal regex failed: %s", e)
+
+        if occurrence_count == 0:
             return (
                 f"Error: Could not find the specified text in {filepath}. "
                 f"Please read the file first to get the exact content."
