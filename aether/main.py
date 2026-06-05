@@ -9,7 +9,6 @@ import re
 import json
 import random
 import argparse
-import time
 from prompt_toolkit import PromptSession
 from prompt_toolkit.formatted_text import HTML
 from prompt_toolkit.key_binding import KeyBindings
@@ -24,6 +23,7 @@ from .config import (
     VERSION,
     AETHER_ASCII,
     SYSTEM_PROMPT,
+    build_system_prompt,
     console,
     get_active_model,
     set_active_model,
@@ -39,13 +39,9 @@ from .tools import tools, backup_manager, execute_tool
 from .commands import handle_slash_command, AetherCompleter
 from .context import ContextManager
 from .mcp import MCPManager
-
-
-# ─── Retry Configuration ───────────────────────────────────────────────────────
-
-MAX_API_RETRIES = 3
-RETRY_BACKOFF_BASE = 2.0
-RETRYABLE_ERRORS = (OpenAIRateLimitError, APITimeoutError, OpenAIConnectionError)
+from .plugins import plugin_manager
+from .retry import retry_with_backoff
+from .logging_config import setup_logging, logger
 
 
 def inject_file_context(user_input: str) -> str:
@@ -97,42 +93,28 @@ def parse_args():
         action="store_true",
         help="Auto-approve all tool operations (no confirmations).",
     )
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Enable verbose logging output to console.",
+    )
     return parser.parse_args()
 
 
+@retry_with_backoff(max_retries=3, backoff_base=2.0)
 def _create_api_stream(client, messages, model, active_tools):
     """
     Create a streaming API call with retry logic for transient errors.
-    Returns the stream generator on success, raises on permanent failure.
+    Retry is handled by the @retry_with_backoff decorator (with jitter).
     """
-    last_exception: BaseException = RuntimeError("API retries exhausted")
-
-    for attempt in range(MAX_API_RETRIES + 1):
-        try:
-            stream = client.chat.completions.create(
-                model=model,
-                messages=messages,
-                tools=active_tools,
-                tool_choice="auto",
-                stream=True,
-                stream_options={"include_usage": True},
-            )
-            return stream
-        except RETRYABLE_ERRORS as e:
-            last_exception = e
-            if attempt < MAX_API_RETRIES:
-                delay = RETRY_BACKOFF_BASE ** attempt
-                retry_msg = Text()
-                retry_msg.append("  ⏳ ", style="yellow")
-                retry_msg.append(f"{type(e).__name__}. ", style="dim")
-                retry_msg.append(
-                    f"Retrying in {delay:.0f}s... ({attempt + 1}/{MAX_API_RETRIES})",
-                    style="dim italic",
-                )
-                console.print(retry_msg)
-                time.sleep(delay)
-
-    raise last_exception
+    return client.chat.completions.create(
+        model=model,
+        messages=messages,
+        tools=active_tools,
+        tool_choice="auto",
+        stream=True,
+        stream_options={"include_usage": True},
+    )
 
 
 def main():
@@ -141,6 +123,10 @@ def main():
     if args.version:
         print(f"Aether v{VERSION}")
         sys.exit(0)
+
+    # Initialize structured logging (file + optional console)
+    setup_logging(verbose=getattr(args, "verbose", False))
+    logger.info("Aether starting v%s", VERSION)
 
     config = load_config()
 
@@ -178,7 +164,7 @@ def main():
         console.print("[dim]Initializing MCP servers...[/dim]")
         mcp_manager.start()
 
-    active_tools = tools + mcp_manager.get_tools()
+    active_tools = tools + mcp_manager.get_tools() + plugin_manager.get_tools()
 
     # ── Header ──
     console.print(AETHER_ASCII)
@@ -201,9 +187,9 @@ def main():
     def _(event):
         event.current_buffer.complete_state = None
 
-    session = PromptSession(completer=AetherCompleter(), key_bindings=kb)
+    session: PromptSession = PromptSession(completer=AetherCompleter(), key_bindings=kb)
 
-    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+    messages = [{"role": "system", "content": build_system_prompt(config)}]
 
     while True:
         try:
@@ -233,11 +219,11 @@ def main():
                         save_session(messages, token_tracker=token_tracker)
                         console.print("[dim]Session auto-saved.[/dim]")
                     except Exception:
-                        pass
+                        logger.exception("Failed to auto-save session on exit")
                 try:
                     mcp_manager.stop()
                 except Exception:
-                    pass
+                    logger.exception("Failed to stop MCP manager on exit")
                 console.print("[yellow]Goodbye! 👋[/yellow]")
                 break
 
@@ -371,6 +357,7 @@ def main():
                                     live.update(tool_text)
 
                 except AuthenticationError:
+                    logger.error("Authentication failed — invalid API key")
                     console.print(
                         "\n[bold red]Authentication Error:[/bold red] Invalid API key."
                     )
@@ -379,6 +366,7 @@ def main():
                     )
                     break
                 except OpenAIRateLimitError:
+                    logger.warning("Rate limited by API")
                     console.print(
                         "\n[bold red]Rate Limited:[/bold red] Too many requests."
                     )
@@ -387,6 +375,7 @@ def main():
                     )
                     break
                 except APITimeoutError:
+                    logger.warning("API request timed out")
                     console.print(
                         "\n[bold red]Timeout:[/bold red] The request timed out."
                     )
@@ -395,6 +384,7 @@ def main():
                     )
                     break
                 except OpenAIConnectionError:
+                    logger.warning("API connection failed")
                     console.print(
                         "\n[bold red]Connection Error:[/bold red] Could not reach the API."
                     )
@@ -403,6 +393,7 @@ def main():
                     )
                     break
                 except Exception as e:
+                    logger.exception("Unexpected API error: %s", e)
                     console.print(f"\n[bold red]API Error:[/bold red] {e}")
                     error_str = str(e).lower()
                     if "401" in error_str or "unauthorized" in error_str:
@@ -436,7 +427,8 @@ def main():
                     token_tracker.add_usage(estimated_input, estimated_output)
 
                 # Build tool calls list
-                tool_calls_list = []
+                from typing import Any
+                tool_calls_list: list[dict[str, Any]] = []
                 for idx in sorted(accumulated_tool_calls.keys()):
                     tc = accumulated_tool_calls[idx]
                     tool_calls_list.append(
@@ -451,7 +443,8 @@ def main():
                     )
 
                 # Add assistant message to history
-                assistant_msg = {
+                from typing import Any
+                assistant_msg: dict[str, Any] = {
                     "role": "assistant",
                     "content": full_content or "",
                 }
@@ -495,16 +488,26 @@ def main():
 
             # ── Footer ──
             footer = Text()
+            
+            # Calculate estimated cost
+            cost = token_tracker.get_estimated_cost(get_active_model())
+            cost_str = f"${cost:.3f}" if cost > 0 else "Unknown"
+            
             footer.append(
-                f"  tokens: ~{token_tracker.total_tokens:,}  │  "
+                f"  tokens: ~{token_tracker.total_tokens:,} (${cost:.3f})  │  " if cost > 0 else f"  tokens: ~{token_tracker.total_tokens:,}  │  "
+            )
+            footer.append(
                 f"messages: {token_tracker.message_count}  │  "
                 f"model: {get_active_model()}",
                 style="dim",
             )
             # Add context usage bar
             footer.append("  │  ", style="dim")
+            
+            # Reconstruct string for dim printing to match existing pattern
+            cost_display = f" (${cost:.3f})" if cost > 0 else ""
             console.print(
-                f"[dim]  tokens: ~{token_tracker.total_tokens:,}  │  "
+                f"[dim]  tokens: ~{token_tracker.total_tokens:,}{cost_display}  │  "
                 f"messages: {token_tracker.message_count}  │  "
                 f"model: {get_active_model()}  │  "
                 f"{context_manager.get_footer_text()}[/dim]\n"
@@ -517,14 +520,15 @@ def main():
                     save_session(messages, token_tracker=token_tracker)
                     console.print("\n[dim]Session auto-saved.[/dim]")
                 except Exception:
-                    pass
+                    logger.exception("Failed to auto-save session on interrupt")
             try:
                 mcp_manager.stop()
             except Exception:
-                pass
+                logger.exception("Failed to stop MCP manager on interrupt")
             console.print("[yellow]Goodbye! 👋[/yellow]")
             break
         except Exception as e:
+            logger.exception("Unhandled error in main loop: %s", e)
             console.print(f"\n[bold red]Error:[/bold red] {e}")
 
 

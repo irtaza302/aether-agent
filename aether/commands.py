@@ -1,4 +1,5 @@
 import os
+import copy
 import subprocess
 import platform
 from datetime import datetime
@@ -30,9 +31,14 @@ SLASH_COMMANDS = [
     ("/retry", "Retry the last user message"),
     ("/copy", "Copy last AI response to clipboard"),
     ("/export", "Export conversation to Markdown"),
+    ("/checkpoint", "Save a named snapshot of the conversation"),
+    ("/restore", "Restore a previously saved checkpoint"),
     ("/config", "View current configuration"),
     ("/mcp", "View configured MCP servers and their status"),
 ]
+
+# In-memory checkpoint storage for conversation branching
+_checkpoints: dict[str, list] = {}
 
 
 class AetherCompleter(Completer):
@@ -90,8 +96,8 @@ class AetherCompleter(Completer):
                                 yield Completion(
                                     display, start_position=-len(query)
                                 )
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug("Failed to list directory contents for autocomplete: %s", e)
         else:
             try:
                 for item in sorted(os.listdir(".")):
@@ -106,8 +112,8 @@ class AetherCompleter(Completer):
                                 yield Completion(
                                     item, start_position=-len(query)
                                 )
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Failed to list current directory for autocomplete: %s", e)
 
 
 def handle_slash_command(
@@ -155,6 +161,8 @@ def handle_slash_command(
         help_table.add_row("/retry", "Retry the last user message")
         help_table.add_row("/copy", "Copy last AI response to clipboard")
         help_table.add_row("/export [file]", "Export conversation to Markdown")
+        help_table.add_row("/checkpoint [name]", "Save a conversation snapshot")
+        help_table.add_row("/restore [name]", "Restore a saved checkpoint")
         help_table.add_row("/config", "View current configuration")
         help_table.add_row("/mcp", "View configured MCP servers and their status")
         help_table.add_row("", "")
@@ -166,7 +174,7 @@ def handle_slash_command(
         console.print()
 
     elif cmd == "/usage":
-        console.print(token_tracker.get_summary_table())
+        console.print(token_tracker.get_summary_table(get_active_model()))
         console.print()
 
     elif cmd == "/save":
@@ -286,27 +294,66 @@ def handle_slash_command(
             middle = messages[1:-4]
 
             if middle:
-                user_topics = [
-                    m["content"][:100]
-                    for m in middle
-                    if m["role"] == "user" and m.get("content")
-                ]
-                summary = (
-                    "Previous conversation summary: The user and assistant discussed "
-                    + "; ".join(user_topics[:5])
-                    + ". The assistant helped with these requests using code analysis and editing tools."
-                )
+                # Attempt LLM-based summarization for much better context retention
+                console.print("[dim]Summarizing conversation with AI...[/dim]")
+                try:
+                    from openai import OpenAI as _OpenAI
+
+                    _config = load_config()
+                    _api_key = _config.get("OPENROUTER_API_KEY", "")
+                    _api_base = _config.get("API_BASE_URL", "https://openrouter.ai/api/v1")
+                    _client = _OpenAI(base_url=_api_base, api_key=_api_key)
+
+                    # Build a summarization request from the middle messages
+                    summary_messages = [
+                        {
+                            "role": "system",
+                            "content": (
+                                "Summarize the following conversation between a user and an AI coding assistant. "
+                                "Focus on: what files were discussed/modified, what tasks were completed, "
+                                "what decisions were made, and any important context for continuing the work. "
+                                "Be concise but thorough. Output only the summary."
+                            ),
+                        },
+                        {
+                            "role": "user",
+                            "content": "\n".join(
+                                f"[{m['role']}]: {(m.get('content') or '')[:500]}"
+                                for m in middle
+                                if m.get("content")
+                            ),
+                        },
+                    ]
+
+                    response = _client.chat.completions.create(
+                        model=get_active_model(),
+                        messages=summary_messages,  # type: ignore
+                        max_tokens=1000,
+                    )
+                    summary = response.choices[0].message.content or ""
+                except Exception:
+                    # Fallback to naive summarization if API call fails
+                    user_topics = [
+                        m["content"][:100]
+                        for m in middle
+                        if m["role"] == "user" and m.get("content")
+                    ]
+                    summary = (
+                        "Previous conversation summary: The user and assistant discussed "
+                        + "; ".join(user_topics[:5])
+                        + ". The assistant helped with these requests using code analysis and editing tools."
+                    )
 
                 messages[:] = [
                     system_msg,
-                    {"role": "user", "content": summary},
+                    {"role": "user", "content": f"Previous conversation summary:\n{summary}"},
                     {
                         "role": "assistant",
                         "content": "Understood. I have the context from our previous discussion. How can I continue helping?",
                     },
                 ] + recent
                 console.print(
-                    f"[green]✓ Compacted {len(middle)} messages into a summary.[/green]\n"
+                    f"[green]✓ Compacted {len(middle)} messages into an AI-generated summary.[/green]\n"
                 )
             else:
                 console.print("[yellow]Not enough messages to compact.[/yellow]\n")
@@ -353,7 +400,7 @@ def handle_slash_command(
         table.add_column("Tools Available", style="dim")
         
         tools = mcp_manager.get_tools()
-        server_tools = {srv: [] for srv in mcp_manager.config.keys()}
+        server_tools: dict[str, list[str]] = {srv: [] for srv in mcp_manager.config.keys()}
         
         for t in tools:
             name = t["function"]["name"]
@@ -383,6 +430,38 @@ def handle_slash_command(
             
         console.print(table)
         console.print()
+
+    elif cmd == "/checkpoint":
+        name = arg or f"cp_{datetime.now().strftime('%H%M%S')}"
+        _checkpoints[name] = copy.deepcopy(messages)
+        console.print(
+            f"[green]✓ Checkpoint '{name}' saved ({len(messages)} messages)[/green]\n"
+        )
+
+    elif cmd == "/restore":
+        if not arg:
+            if not _checkpoints:
+                console.print("[yellow]No checkpoints saved. Use /checkpoint [name] first.[/yellow]\n")
+            else:
+                table = Table(
+                    title="📌 Checkpoints",
+                    border_style="magenta",
+                    header_style="bold magenta",
+                )
+                table.add_column("Name", style="cyan")
+                table.add_column("Messages", style="white", justify="right")
+                for cp_name, cp_msgs in _checkpoints.items():
+                    table.add_row(cp_name, str(len(cp_msgs)))
+                console.print(table)
+                console.print("[dim]Usage: /restore <name>[/dim]\n")
+        else:
+            if arg in _checkpoints:
+                messages[:] = copy.deepcopy(_checkpoints[arg])
+                console.print(
+                    f"[green]✓ Restored checkpoint '{arg}' ({len(messages)} messages)[/green]\n"
+                )
+            else:
+                console.print(f"[red]Checkpoint '{arg}' not found.[/red]\n")
 
     else:
         console.print(

@@ -1,2 +1,4 @@
 # Aether AI Agent package
-__version__ = "2.1.2"
+from .config import VERSION
+
+__version__ = VERSION

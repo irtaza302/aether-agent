@@ -5,12 +5,22 @@ import time
 import getpass
 import threading
 import urllib.request
+from importlib.metadata import version as _pkg_version, PackageNotFoundError
 from dotenv import load_dotenv
 from rich.console import Console
+import logging
+
+logger = logging.getLogger("aether")
 
 # ─── Constants ──────────────────────────────────────────────────────────────────
 
-VERSION = "2.1.0"
+# Read version from installed package metadata (stays in sync with pyproject.toml).
+# Falls back to a hardcoded value only when running from source without installing.
+_FALLBACK_VERSION = "2.1.2"
+try:
+    VERSION = _pkg_version("aether-ai-cli")
+except PackageNotFoundError:
+    VERSION = _FALLBACK_VERSION
 CONFIG_PATH = os.path.expanduser("~/.aether_config.json")
 SESSIONS_DIR = os.path.expanduser("~/.aether_sessions")
 BACKUPS_DIR = os.path.expanduser("~/.aether_backups")
@@ -74,6 +84,47 @@ Never use `write_file` to modify existing files unless a full rewrite is truly n
 
 console = Console()
 
+
+# Project-level rules files (checked in order, first found wins)
+_PROJECT_RULES_FILES = [".aether_rules", ".cursorrules"]
+
+
+def build_system_prompt(config: dict | None = None) -> str:
+    """
+    Build the final system prompt by merging:
+    1. Default SYSTEM_PROMPT
+    2. User override from ~/.aether_config.json ("system_prompt" key)
+    3. Project-specific rules from .aether_rules or .cursorrules in CWD
+
+    This allows per-project customization without modifying source code.
+    """
+    parts = []
+
+    # Start with default or config override
+    if config and config.get("system_prompt"):
+        parts.append(config["system_prompt"])
+    else:
+        parts.append(SYSTEM_PROMPT)
+
+    # Append project-specific rules if present
+    for rules_file in _PROJECT_RULES_FILES:
+        if os.path.isfile(rules_file):
+            try:
+                with open(rules_file, "r", encoding="utf-8", errors="ignore") as f:
+                    project_rules = f.read().strip()
+                if project_rules:
+                    parts.append(
+                        f"\n\n## Project-Specific Rules\n"
+                        f"The following rules are defined by the project maintainers "
+                        f"(from {rules_file}):\n\n{project_rules}"
+                    )
+                    console.print(f"  [dim]📋 Loaded project rules from {rules_file}[/dim]")
+                break  # Only use the first rules file found
+            except Exception as e:
+                logger.debug("Failed to load project rules from %s: %s", rules_file, e)
+
+    return "\n".join(parts)
+
 # Global state for active model
 active_model = DEFAULT_MODEL
 
@@ -91,8 +142,8 @@ def load_config() -> dict:
         try:
             with open(CONFIG_PATH, 'r') as f:
                 return json.load(f)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Failed to load config file: %s", e)
     return {}
 
 
@@ -168,8 +219,8 @@ def _do_update_check(config: dict):
             config["_latest_version"] = latest
             try:
                 save_config(config)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Failed to save config after update check: %s", e)
 
             if latest != VERSION:
                 console.print(
@@ -177,8 +228,8 @@ def _do_update_check(config: dict):
                 )
                 console.print("[dim]Run: pip install -U aether-ai-cli (or brew upgrade aether)[/dim]")
                 console.print("[dim]Then restart Aether to use the new version![/dim]\n")
-    except Exception:
-        pass  # Silently fail — never block the user
+    except Exception as e:
+        logger.debug("Update check failed (network/parsing): %s", e)
 
 
 def check_for_updates(config: dict | None = None):

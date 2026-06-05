@@ -7,6 +7,7 @@ from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
 from .config import console
+from .logging_config import logger
 
 class MCPManager:
     def __init__(self, mcp_servers_config: dict):
@@ -21,6 +22,8 @@ class MCPManager:
     def start(self):
         if not self.config:
             return
+        
+        logger.info("Starting MCP servers: %s", list(self.config.keys()))
         
         self._thread = threading.Thread(target=self._run_loop, daemon=True)
         self._thread.start()
@@ -79,8 +82,10 @@ class MCPManager:
                             "parameters": tool.inputSchema,
                         }
                     })
+                logger.info("MCP server '%s' connected with %d tools", name, len(response.tools))
                 console.print(f"  [dim green]✓ Connected to MCP server: {name}[/dim green]")
             except Exception as e:
+                logger.exception("Failed to connect to MCP server '%s'", name)
                 console.print(f"  [dim yellow]⚠️  Failed to connect to MCP server {name}: {e}[/dim yellow]")
 
     def stop(self):
@@ -88,8 +93,8 @@ class MCPManager:
             try:
                 future = asyncio.run_coroutine_threadsafe(self._cleanup(), self._loop)
                 future.result(timeout=5.0)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Error during MCP cleanup: %s", e)
             finally:
                 self._loop.call_soon_threadsafe(self._loop.stop)
                 if self._thread:
@@ -104,6 +109,7 @@ class MCPManager:
         return self.tools_cache
 
     def call_tool(self, full_tool_name: str, arguments: dict) -> str:
+        logger.debug("MCP call_tool: %s args=%s", full_tool_name, list(arguments.keys()))
         for server_name in self.sessions:
             prefix = f"mcp_{server_name}_"
             if full_tool_name.startswith(prefix):

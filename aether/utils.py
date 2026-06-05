@@ -72,8 +72,8 @@ class TokenTracker:
         if enc and enc is not False:
             try:
                 return len(enc.encode(text))
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("tiktoken encoding failed: %s", e)
 
         # Fallback: ~1.3 tokens per word (rough but usable)
         return max(1, int(len(text.split()) * 1.3))
@@ -95,6 +95,10 @@ class TokenTracker:
         if self._using_api_usage:
             return self.api_reported_output
         return self.total_output_tokens
+        
+    def get_estimated_cost(self, active_model: str) -> float:
+        """Returns the estimated cost in USD for the current session."""
+        return get_model_cost(active_model, self.input_tokens, self.output_tokens)
 
     @property
     def session_duration(self) -> str:
@@ -105,7 +109,7 @@ class TokenTracker:
             return f"{minutes}m {seconds}s"
         return f"{seconds}s"
 
-    def get_summary_table(self) -> Table:
+    def get_summary_table(self, active_model: str = "") -> Table:
         source = "API-reported" if self._using_api_usage else "Estimated"
         enc = _get_tiktoken_encoding()
         method = "tiktoken" if (enc and enc is not False and not self._using_api_usage) else "heuristic"
@@ -117,9 +121,37 @@ class TokenTracker:
         table.add_row("Input Tokens", f"{self.input_tokens:,}")
         table.add_row("Output Tokens", f"{self.output_tokens:,}")
         table.add_row("Total Tokens", f"{self.total_tokens:,}")
+        
+        if active_model:
+            cost = get_model_cost(active_model, self.input_tokens, self.output_tokens)
+            if cost > 0:
+                table.add_row("Est. Cost", f"${cost:.4f} USD")
+            else:
+                table.add_row("Est. Cost", "Unknown (Pricing not in DB)")
+
         table.add_row("Counting Method", f"{source} ({method})")
         table.add_row("Session Duration", self.session_duration)
         return table
+
+# Pricing per 1,000,000 tokens (input, output) in USD
+MODEL_PRICING = {
+    "anthropic/claude-3.5-sonnet": (3.00, 15.00),
+    "anthropic/claude-3.7-sonnet": (3.00, 15.00),
+    "anthropic/claude-3-opus": (15.00, 75.00),
+    "anthropic/claude-3.5-haiku": (0.25, 1.25),
+    "google/gemini-2.5-pro": (1.25, 5.00),
+    "google/gemini-2.5-flash": (0.075, 0.30),
+    "openai/gpt-4o": (2.50, 10.00),
+    "openai/o1": (15.00, 60.00),
+    "openai/o3-mini": (1.10, 4.40),
+}
+
+def get_model_cost(model_name: str, input_tokens: int, output_tokens: int) -> float:
+    """Calculate the estimated cost for a given model and token count."""
+    for known_model, (in_price, out_price) in MODEL_PRICING.items():
+        if known_model in model_name.lower():
+            return (input_tokens * in_price / 1_000_000) + (output_tokens * out_price / 1_000_000)
+    return 0.0
 
 
 class BackupManager:
@@ -142,7 +174,8 @@ class BackupManager:
             shutil.copy2(abs_path, backup_path)
             self.undo_stack.append((abs_path, backup_path, timestamp))
             return backup_path
-        except Exception:
+        except Exception as e:
+            logger.debug("Failed to backup file %s: %s", filepath, e)
             return None
 
     def undo(self) -> str:
@@ -172,8 +205,8 @@ class BackupManager:
                     age_hours = (now - os.path.getmtime(path)) / 3600
                     if age_hours > max_age_hours:
                         os.remove(path)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Cleanup backups failed: %s", e)
 
 
 def truncate_output(text: str, max_chars: int = 4000) -> str:
@@ -199,8 +232,8 @@ def load_gitignore_patterns() -> list:
                     line = line.strip()
                     if line and not line.startswith("#"):
                         patterns.append(line)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Failed to load .gitignore: %s", e)
     return patterns
 
 

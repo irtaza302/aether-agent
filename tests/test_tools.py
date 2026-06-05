@@ -202,13 +202,51 @@ class TestRunCommand:
         assert "Exit code:" in result or "exit code" in result.lower()
 
     def test_run_command_timeout(self):
-        result = run_command_impl("sleep 10", auto_approve=True, timeout=1)
+        result = run_command_impl("sleep 10", auto_approve=True, timeout=2)
         assert "timed out" in result.lower()
 
     def test_run_command_user_deny(self):
         with patch("builtins.input", return_value="n"):
             result = run_command_impl("npm install", auto_approve=False)
         assert "denied" in result.lower()
+
+    def test_run_command_with_stderr(self):
+        result = run_command_impl("echo 'err' >&2", auto_approve=True)
+        assert "err" in result
+
+    def test_run_command_persistent_cd(self, tmp_dir):
+        old_cwd = os.getcwd()
+        try:
+            # Create a test directory
+            test_dir = os.path.join(tmp_dir, "cd_test")
+            os.makedirs(test_dir, exist_ok=True)
+            
+            # Change to it using the tool
+            result = run_command_impl(f"cd {test_dir}", auto_approve=True)
+            assert "Working directory changed" in result
+            assert os.getcwd() == os.path.realpath(test_dir)
+        finally:
+            os.chdir(old_cwd)
+
+    def test_run_command_background(self):
+        from aether.tools import check_background_task_impl, kill_background_task_impl
+        # Start a background task
+        result = run_command_impl("sleep 10", auto_approve=True, background=True)
+        assert "Task started in background with ID:" in result
+        
+        # Extract task ID
+        task_id = result.split("ID: ")[1].strip()
+        
+        # Check task status
+        status = check_background_task_impl(task_id)
+        assert "Status: RUNNING" in status
+        
+        # Kill the task
+        kill_result = kill_background_task_impl(task_id)
+        assert "killed" in kill_result
+        
+        # Ensure it's removed
+        assert "Error: No such background task" in check_background_task_impl(task_id)
 
 
 class TestListDirectory:

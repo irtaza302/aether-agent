@@ -1,17 +1,28 @@
 import os
 import json
 import re
+import time
 import difflib
 import fnmatch
 import subprocess
 from rich.panel import Panel
 from rich.text import Text
 from rich.syntax import Syntax
+from rich.live import Live
 from rich.progress import Progress, SpinnerColumn, TextColumn
 
 from .config import console, SAFE_COMMAND_PREFIXES, DANGEROUS_PATTERNS
 from .utils import BackupManager, truncate_output, load_gitignore_patterns, should_ignore, Struct
 from .exceptions import FileOperationError, ToolExecutionError
+from .logging_config import logger
+from .plugins import plugin_manager
+import uuid
+import threading
+from typing import Any
+
+# Global dictionary for tracking background tasks
+# task_id -> {"process": Popen, "stdout": list, "stderr": list, "command": str}
+background_tasks: dict[str, dict[str, Any]] = {}
 
 # ─── Constants ──────────────────────────────────────────────────────────────────
 
@@ -98,16 +109,58 @@ tools = [
         "type": "function",
         "function": {
             "name": "run_command",
-            "description": "Executes a shell command. Safe read-only commands run automatically; destructive commands require user confirmation.",
+            "description": "Executes a shell command. Safe read-only commands run automatically; destructive commands require user confirmation. Use the timeout parameter for long-running commands like builds or test suites.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "command": {
                         "type": "string",
                         "description": "The shell command to execute.",
-                    }
+                    },
+                    "timeout": {
+                        "type": "integer",
+                        "description": "Timeout in seconds. Default 120. Set higher for builds/tests (e.g. 300).",
+                    },
+                    "background": {
+                        "type": "boolean",
+                        "description": "If true, runs the command asynchronously in the background. Returns a task ID immediately.",
+                    },
                 },
                 "required": ["command"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "check_background_task",
+            "description": "Checks the status and reads the recent output of a command running in the background.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "task_id": {
+                        "type": "string",
+                        "description": "The ID of the background task.",
+                    }
+                },
+                "required": ["task_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "kill_background_task",
+            "description": "Kills a running background task.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "task_id": {
+                        "type": "string",
+                        "description": "The ID of the background task.",
+                    }
+                },
+                "required": ["task_id"],
             },
         },
     },
@@ -205,20 +258,29 @@ def _detect_language(filepath: str) -> str:
 
 
 def _render_diff(diff_lines: list[str], filepath: str) -> None:
-    """Render a unified diff with syntax highlighting."""
-    diff_text = ""
+    """Render a unified diff with rich terminal formatting."""
+    diff_text = Text()
+    
     for line in diff_lines:
-        diff_text += line if line.endswith("\n") else line + "\n"
+        line = line.rstrip("\n")
+        if not line:
+            continue
+            
+        if line.startswith("+++") or line.startswith("---"):
+            diff_text.append(line + "\n", style="bold cyan")
+        elif line.startswith("@@"):
+            diff_text.append(line + "\n", style="cyan")
+        elif line.startswith("+"):
+            # Green text on a very dark green background
+            diff_text.append(line + "\n", style="green on #0e2a14")
+        elif line.startswith("-"):
+            # Red text on a very dark red background
+            diff_text.append(line + "\n", style="red on #3b1414")
+        else:
+            diff_text.append(line + "\n", style="dim")
 
-    if diff_text.strip():
-        syntax = Syntax(
-            diff_text,
-            "diff",
-            theme="monokai",
-            line_numbers=True,
-            word_wrap=True,
-        )
-        console.print(syntax)
+    if len(diff_text) > 0:
+        console.print(diff_text)
 
 
 def _try_repair_json(raw: str) -> dict | None:
@@ -256,8 +318,43 @@ def _try_repair_json(raw: str) -> dict | None:
 
 backup_manager = BackupManager()
 
+_git_warned = False
+
+def _check_git_dirty(filepath: str) -> None:
+    """Warn the user once per session if they are modifying files in a dirty git repo."""
+    global _git_warned
+    if _git_warned:
+        return
+        
+    try:
+        abs_dir = os.path.dirname(os.path.abspath(filepath))
+        # Check if we are in a git repo
+        repo_dir = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"], 
+            cwd=abs_dir, capture_output=True, text=True, check=True
+        ).stdout.strip()
+        
+        # Check if dirty
+        status = subprocess.run(
+            ["git", "status", "--porcelain"], 
+            cwd=repo_dir, capture_output=True, text=True, check=True
+        ).stdout.strip()
+        
+        if status:
+            console.print(
+                "\n  [bold yellow]⚠️  Git Safety Warning:[/bold yellow] "
+                "[yellow]You have uncommitted changes in this repository.[/yellow]\n"
+                "  [dim]Aether's modifications could mix with your uncommitted work.\n"
+                "  Consider committing or stashing your changes before proceeding.[/dim]\n"
+            )
+            _git_warned = True
+    except Exception:
+        pass  # Not a git repo or git not installed
+
+
 def read_file(filepath: str) -> str:
     """Read file contents with safety checks for size and binary detection."""
+    logger.debug("read_file: %s", filepath)
     try:
         if not os.path.exists(filepath):
             return f"Error: File '{filepath}' does not exist."
@@ -291,14 +388,18 @@ def read_file(filepath: str) -> str:
         line_count = content.count("\n") + (1 if content and not content.endswith("\n") else 0)
         return f"[File: {filepath} | {line_count} lines | {file_size:,} bytes]\n{content}"
     except PermissionError:
+        logger.error("Permission denied reading '%s'", filepath)
         return f"Error: Permission denied reading '{filepath}'."
     except Exception as e:
+        logger.exception("Error reading file '%s'", filepath)
         return f"Error reading file: {e}"
 
 
 def write_file_with_diff(filepath: str, content: str, auto_approve: bool = False) -> str:
     """Write/overwrite a file with diff preview and optional auto-approval."""
+    logger.debug("write_file: %s (%d bytes)", filepath, len(content))
     try:
+        _check_git_dirty(filepath)
         old_content = ""
         exists = os.path.exists(filepath)
 
@@ -306,8 +407,8 @@ def write_file_with_diff(filepath: str, content: str, auto_approve: bool = False
             try:
                 with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
                     old_content = f.read()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Failed to read old content for %s: %s", filepath, e)
 
         if exists:
             diff = list(
@@ -366,7 +467,9 @@ def write_file_with_diff(filepath: str, content: str, auto_approve: bool = False
 
 def edit_file(filepath: str, old_content: str, new_content: str, auto_approve: bool = False) -> str:
     """Surgical edit with diff preview and optional auto-approval."""
+    logger.debug("edit_file: %s", filepath)
     try:
+        _check_git_dirty(filepath)
         if not os.path.exists(filepath):
             return f"Error: File '{filepath}' does not exist. Use write_file to create new files."
 
@@ -452,8 +555,24 @@ def is_command_safe(command: str) -> bool:
     return False
 
 
-def run_command_impl(command: str, auto_approve: bool = False, timeout: int = 120) -> str:
-    """Execute a shell command with safety checks and configurable timeout."""
+def run_command_impl(command: str, auto_approve: bool = False, timeout: int = 120, background: bool = False) -> str:
+    """Execute a shell command with safety checks, configurable timeout, and live output."""
+    logger.debug("run_command: %s (timeout=%ds, background=%s)", command, timeout, background)
+
+    # Intercept pure 'cd' commands to update process working directory persistently
+    cmd_stripped = command.strip()
+    if cmd_stripped.startswith("cd ") and not any(sep in cmd_stripped for sep in ["&&", ";", "||", "|"]):
+        target_dir = cmd_stripped[3:].strip()
+        target_dir = os.path.expanduser(target_dir.strip("\"'"))
+        try:
+            os.chdir(target_dir)
+            new_cwd = os.getcwd()
+            logger.info("Changed working directory to %s", new_cwd)
+            console.print(f"  [dim]▶ Changed directory to {new_cwd}[/dim]")
+            return f"Working directory changed to {new_cwd}"
+        except Exception as e:
+            logger.error("Failed to change directory to '%s': %s", target_dir, e)
+            return f"Error changing directory: {e}"
     safe = is_command_safe(command)
 
     if not safe and not auto_approve:
@@ -467,32 +586,145 @@ def run_command_impl(command: str, auto_approve: bool = False, timeout: int = 12
         if confirmation != "y":
             return "User denied command execution."
     elif safe:
-        console.print(f"  [dim]▶ {command}[/dim]")
+        console.print(f"  [dim]▶ {command}{' (background)' if background else ''}[/dim]")
 
     try:
-        result = subprocess.run(
+        # Use Popen for streaming output with live display
+        import select
+
+        proc = subprocess.Popen(
             command,
             shell=True,
             text=True,
-            capture_output=True,
-            check=False,
-            timeout=timeout,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
         )
-        output = ""
-        if result.stdout:
-            output += result.stdout
-        if result.stderr:
+
+        if background:
+            task_id = f"bg_{uuid.uuid4().hex[:8]}"
+            task_info = {
+                "process": proc,
+                "stdout": [],
+                "stderr": [],
+                "command": command,
+                "start_time": time.time()
+            }
+            background_tasks[task_id] = task_info
+            
+            def stream_reader(pipe, dest_list):
+                for line in iter(pipe.readline, ''):
+                    dest_list.append(line)
+                pipe.close()
+
+            threading.Thread(target=stream_reader, args=(proc.stdout, task_info["stdout"]), daemon=True).start()
+            threading.Thread(target=stream_reader, args=(proc.stderr, task_info["stderr"]), daemon=True).start()
+            
+            return f"Task started in background with ID: {task_id}"
+
+        stdout_lines: list[str] = []
+        stderr_lines: list[str] = []
+        start_time = time.time()
+        shown_live = False
+
+        with Live(
+            Text("  ▶ Running...", style="dim italic"),
+            console=console,
+            refresh_per_second=4,
+            transient=True,
+        ) as live:
+            while proc.poll() is None:
+                elapsed = time.time() - start_time
+                if elapsed > timeout:
+                    proc.kill()
+                    logger.warning("Command timed out after %ds: %s", timeout, command)
+                    return f"Error: Command timed out after {timeout} seconds."
+
+                # Read available stdout non-blockingly
+                if proc.stdout:
+                    rlist, _, _ = select.select([proc.stdout], [], [], 0.1)
+                    if rlist:
+                        line = proc.stdout.readline()
+                        if line:
+                            stdout_lines.append(line)
+                            # Show live output tail (last 15 lines)
+                            tail = "".join(stdout_lines[-15:])
+                            display = Text()
+                            display.append(f"  ▶ Running ({elapsed:.0f}s)\n", style="dim italic")
+                            display.append(tail.rstrip(), style="dim")
+                            live.update(display)
+                            shown_live = True
+
+            # Read remaining output after process exits
+            if proc.stdout:
+                remaining = proc.stdout.read()
+                if remaining:
+                    stdout_lines.append(remaining)
+            if proc.stderr:
+                stderr_lines.append(proc.stderr.read())
+
+        output = "".join(stdout_lines)
+        stderr_output = "".join(stderr_lines).strip()
+
+        if stderr_output:
             if output:
-                output += f"\nSTDERR:\n{result.stderr}"
+                output += f"\nSTDERR:\n{stderr_output}"
             else:
-                output = result.stderr
-        if result.returncode != 0:
-            output += f"\n[Exit code: {result.returncode}]"
-        return output.strip() if output.strip() else f"Command completed (exit code {result.returncode})"
+                output = stderr_output
+        if proc.returncode != 0:
+            output += f"\n[Exit code: {proc.returncode}]"
+        return output.strip() if output.strip() else f"Command completed (exit code {proc.returncode})"
     except subprocess.TimeoutExpired:
+        logger.warning("Command timed out after %ds: %s", timeout, command)
         return f"Error: Command timed out after {timeout} seconds."
     except Exception as e:
+        logger.exception("Error executing command: %s", command)
         return f"Error executing command: {e}"
+
+
+def check_background_task_impl(task_id: str) -> str:
+    """Checks the status of a background task and returns its recent output."""
+    if task_id not in background_tasks:
+        return f"Error: No such background task '{task_id}'."
+
+    task = background_tasks[task_id]
+    proc = task["process"]
+    
+    out_lines = list(task["stdout"])
+    err_lines = list(task["stderr"])
+    
+    stdout_str = "".join(out_lines[-100:]).strip()  # Return last 100 lines to avoid massive output
+    stderr_str = "".join(err_lines[-100:]).strip()
+    
+    status = "RUNNING" if proc.poll() is None else f"FINISHED (Exit code {proc.returncode})"
+    
+    result = f"Task: {task_id}\nCommand: {task['command']}\nStatus: {status}\n\n"
+    if stdout_str:
+        result += f"--- STDOUT (last 100 lines) ---\n{stdout_str}\n\n"
+    if stderr_str:
+        result += f"--- STDERR (last 100 lines) ---\n{stderr_str}\n"
+    
+    # Optional cleanup if done
+    if proc.poll() is not None:
+        del background_tasks[task_id]
+        
+    return result.strip()
+
+
+def kill_background_task_impl(task_id: str) -> str:
+    """Kills a running background task."""
+    if task_id not in background_tasks:
+        return f"Error: No such background task '{task_id}'."
+
+    task = background_tasks[task_id]
+    proc = task["process"]
+    
+    if proc.poll() is None:
+        proc.kill()
+        del background_tasks[task_id]
+        return f"Task {task_id} killed."
+    else:
+        del background_tasks[task_id]
+        return f"Task {task_id} was already finished."
 
 
 def list_directory(path: str = ".") -> str:
@@ -590,8 +822,8 @@ def grep_search(query: str, path: str = ".", is_regex: bool = False) -> str:
                                         "\n".join(matches)
                                         + "\n\n(Showing first 50 results)"
                                     )
-                except (UnicodeDecodeError, PermissionError, OSError):
-                    pass
+                except (UnicodeDecodeError, PermissionError, OSError) as e:
+                    logger.debug("grep_search skipped %s: %s", file_path, e)
 
         if not matches:
             return f"No matches found for '{query}'."
@@ -647,6 +879,7 @@ def execute_tool(tool_call, auto_approve: bool = False) -> str:
     """
     func_name = tool_call.function.name
     raw_args = tool_call.function.arguments
+    logger.debug("Dispatching tool: %s", func_name)
 
     # Parse arguments with repair fallback
     try:
@@ -694,9 +927,23 @@ def execute_tool(tool_call, auto_approve: bool = False) -> str:
 
     elif func_name == "run_command":
         command = str(args.get("command", ""))
+        timeout = int(args.get("timeout", 120))
+        background = bool(args.get("background", False))
         tool_label.append(f" → {command or '?'}", style="dim")
         console.print(tool_label)
-        return truncate_output(run_command_impl(command, auto_approve))
+        return truncate_output(run_command_impl(command, auto_approve, timeout=timeout, background=background))
+
+    elif func_name == "check_background_task":
+        task_id = str(args.get("task_id", ""))
+        tool_label.append(f" → {task_id}", style="dim")
+        console.print(tool_label)
+        return check_background_task_impl(task_id)
+
+    elif func_name == "kill_background_task":
+        task_id = str(args.get("task_id", ""))
+        tool_label.append(f" → {task_id}", style="dim")
+        console.print(tool_label)
+        return kill_background_task_impl(task_id)
 
     elif func_name == "list_directory":
         p = str(args.get("path", "."))
@@ -720,6 +967,11 @@ def execute_tool(tool_call, auto_approve: bool = False) -> str:
         return truncate_output(find_files(pattern, path))
 
     else:
+        # Check if a plugin handles this tool
+        plugin_result = plugin_manager.execute_tool(tool_call, auto_approve=auto_approve)
+        if plugin_result is not None:
+            return plugin_result
+            
         console.print(tool_label)
         return f"Unknown tool: {func_name}"
 

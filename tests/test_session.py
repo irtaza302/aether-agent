@@ -21,8 +21,8 @@ class TestSaveSession:
             {"role": "assistant", "content": "Hi there!"},
         ]
         path = save_session(messages)
-        assert os.path.exists(path)
-        assert path.endswith(".json")
+        path = save_session(messages)
+        assert path.startswith("sqlite://")
 
     def test_save_session_custom_name(self, tmp_dir, monkeypatch):
         import aether.session
@@ -30,7 +30,7 @@ class TestSaveSession:
 
         messages = [{"role": "user", "content": "test"}]
         path = save_session(messages, "my_session")
-        assert "my_session" in path
+        assert path == "sqlite://my_session"
 
     def test_save_session_with_tracker(self, tmp_dir, monkeypatch):
         import aether.session
@@ -42,10 +42,12 @@ class TestSaveSession:
         messages = [{"role": "user", "content": "test"}]
         path = save_session(messages, "tracked", tracker)
 
-        with open(path) as f:
-            data = json.load(f)
-        assert data["tokens"]["input"] == 100
-        assert data["tokens"]["output"] == 50
+        conn = aether.session._get_db()
+        cur = conn.execute("SELECT input_tokens, output_tokens FROM sessions WHERE name = 'tracked'")
+        row = cur.fetchone()
+        assert row is not None
+        assert row[0] == 100
+        assert row[1] == 50
 
     def test_save_session_sanitizes_name(self, tmp_dir, monkeypatch):
         import aether.session
@@ -53,7 +55,7 @@ class TestSaveSession:
 
         messages = [{"role": "user", "content": "test"}]
         path = save_session(messages, "my session/with:special*chars")
-        basename = os.path.basename(path)
+        basename = path.replace("sqlite://", "")
         assert "/" not in basename
         assert ":" not in basename
         assert "*" not in basename
