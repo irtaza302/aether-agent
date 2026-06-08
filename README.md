@@ -7,13 +7,13 @@ A helpful AI coding assistant you can use right in your terminal. Aizen reads yo
 ## ✨ Features
 
 ### Core
-- **Runs Fast** — Uses modern async code so it stays quick and can handle many tasks at once.
-- **Nice Text Display** — Shows AI replies with clear headings, code blocks, and lists.
-- **Live Updates** — You see the answer appear step by step, like a typing effect.
-- **Careful File Changes** — The edit tool changes only the parts you need, showing a simple before‑and‑after view.
-- **Remember Your Work** — Saves your chat history in a small local database.
-- **Project Settings** — Lets each project have its own custom rules automatically.
-- **Easy File Lookup** — Type `@` and start typing a name to quickly pick a file, while ignoring hidden or ignored files.
+- **Asynchronous Architecture** — Fully asynchronous operations leveraging `asyncio` and `AsyncOpenAI` for concurrent processing, parallel tool runs, and streaming.
+- **Rich Markdown Rendering** — AI responses are rendered with full Markdown formatting (headers, code blocks, lists, bold/italic) via Rich's live display.
+- **Streaming with Live Preview** — Watch responses render in real-time inside a styled panel with an animated thinking spinner.
+- **Surgical File Editing** — The `edit_file` tool makes precise search-and-replace edits with color-coded diff previews, instead of rewriting entire files.
+- **SQLite Session Persistence** — Session storage is powered by a SQLite database (`~/.aizen_sessions/aizen.db`), auto-migrating older JSON sessions.
+- **Project-Specific Rules** — Customizes agent behavior per repository by auto-loading `.aizen_rules` or `.cursorrules` from the current working directory.
+- **Smart Autocomplete** — `@`-mention files with Tab completion that respects `.gitignore` and supports directory traversal.
 
 ### Tools
 Aizen has 9 built-in tools the AI can use:
@@ -21,8 +21,9 @@ Aizen has 9 built-in tools the AI can use:
 | Tool | Description |
 |------|-------------|
 | `read_file` | Read file contents before making changes |
-| `write_file` | Create new files (with preview) |
-| `edit_file` | Surgical search-and-replace on existing files (with diff preview) |
+| `write_file` | Create new files or overwrite entirely (with preview) |
+| `replace_file_content` | Surgical search-and-replace on existing files (with line-bounds and diff preview) |
+| `multi_replace_file_content` | Perform multiple, non-adjacent surgical edits sequentially in a single pass |
 | `run_command` | Execute shell commands (supports background execution; safe commands auto-run, dangerous ones require approval) |
 | `check_background_task` | Check the status and read recent output of a command running in the background |
 | `kill_background_task` | Kill a running background task |

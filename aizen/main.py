@@ -243,7 +243,7 @@ async def main_loop():
     })
 
     session: PromptSession = PromptSession(
-        completer=AizenCompleter(), 
+        completer=AizenCompleter(),
         key_bindings=kb,
         style=cyberpunk_style
     )

@@ -2,7 +2,7 @@
 
 import pytest
 
-from aizen.context import ContextManager, MODEL_CONTEXT_WINDOWS, DEFAULT_CONTEXT_WINDOW
+from aizen.context import DEFAULT_CONTEXT_WINDOW, ContextManager
 
 
 class TestContextManager:
@@ -90,6 +90,8 @@ class TestContextManager:
             {"role": "system", "content": "You are an AI."},
             {"role": "user", "content": "Hello world"},
         ]
-        estimator = lambda text: max(1, int(len(text.split()) * 1.3))
+        def estimator(text):
+            return max(1, int(len(text.split()) * 1.3))
+
         total = cm.estimate_messages_tokens(messages, estimator)
         assert total > 0

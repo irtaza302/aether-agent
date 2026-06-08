@@ -1,9 +1,11 @@
 import os
+
 from setuptools import setup
+
 
 def parse_requirements(filename):
     filepath = os.path.join(os.path.dirname(__file__), filename)
-    with open(filepath, 'r') as f:
+    with open(filepath) as f:
         return [line.strip() for line in f if line.strip() and not line.startswith('#')]
 
 setup(

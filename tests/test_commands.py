@@ -1,10 +1,11 @@
 """Tests for aizen.commands module."""
 
 import os
-import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
-from aizen.commands import handle_slash_command, AizenCompleter
+import pytest
+
+from aizen.commands import AizenCompleter, handle_slash_command
 from aizen.utils import TokenTracker
 
 
@@ -142,12 +143,12 @@ class TestSlashCommands:
     async def test_commit_command(self, mock_prompt, mock_run):
         """Test /commit command calls git and API."""
         mock_prompt.return_value = "y"
-        
+
         # Mock git diff --cached returning a diff
         mock_diff = MagicMock()
         mock_diff.stdout = "diff --git a/test b/test"
         mock_run.return_value = mock_diff
-        
+
         # Mock client
         class MockMessage:
             content = "feat: add test"
@@ -162,9 +163,9 @@ class TestSlashCommands:
             completions = MockCompletions()
         class MockClient:
             chat = MockChat()
-            
+
         result = await handle_slash_command("/commit", [], TokenTracker(), client=MockClient())
-        
+
         assert result is False
         mock_run.assert_any_call(["git", "commit", "-m", "feat: add test"], check=True)
 

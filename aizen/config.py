@@ -52,7 +52,7 @@ class Theme:
     BADGE = f"[bold {ACCENT}]◆ AIZEN[/bold {ACCENT}]"
 
 
-AIZEN_ASCII = f"""
+AIZEN_ASCII = """
 [bold #c084fc]  ╔══════════════════════════════════════════════╗[/bold #c084fc]
 [bold #c084fc]  ║[/bold #c084fc]                                              [bold #c084fc]║[/bold #c084fc]
 [bold #c084fc]  ║[/bold #c084fc]  [bold #c084fc]█████[/bold #c084fc][bold #a78bfa]╗[/bold #a78bfa] [bold #a78bfa]██[/bold #a78bfa][bold #818cf8]╗[/bold #818cf8][bold #818cf8]███████[/bold #818cf8][bold #6366f1]╗[/bold #6366f1][bold #6366f1]███████[/bold #6366f1][bold #22d3ee]╗[/bold #22d3ee][bold #22d3ee]███╗   ██╗[/bold #22d3ee]  [bold #c084fc]║[/bold #c084fc]
@@ -306,7 +306,7 @@ def _do_update_check(config: dict):
                 is_newer = latest_parts > current_parts
             except Exception:
                 is_newer = latest != VERSION
-                
+
             if is_newer:
                 console.print(
                     f"\n[bold magenta]🔔 Update available:[/bold magenta] v{VERSION} → v{latest}"
@@ -336,7 +336,7 @@ def check_for_updates(config: dict | None = None):
                 is_newer = cached_parts > current_parts
             except Exception:
                 is_newer = cached != VERSION
-                
+
             if is_newer:
                 console.print(
                     f"\n[bold magenta]🔔 Update available:[/bold magenta] v{VERSION} → v{cached}"

@@ -1,17 +1,14 @@
 """Tests for aizen.config module."""
 
 import os
-import json
-import pytest
-from unittest.mock import patch
 
 from aizen.config import (
     VERSION,
+    _should_check_updates,
+    get_active_model,
     load_config,
     save_config,
-    get_active_model,
     set_active_model,
-    _should_check_updates,
 )
 
 

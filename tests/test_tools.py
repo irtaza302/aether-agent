@@ -1,24 +1,23 @@
 """Tests for aizen.tools module."""
 
-import os
 import json
-import pytest
-from unittest.mock import patch, MagicMock
+import os
+from unittest.mock import patch
 
 from aizen.tools import (
-    read_file,
-    write_file_with_diff,
-    edit_file,
-    is_command_safe,
-    run_command_impl,
-    list_directory,
-    grep_search,
-    find_files,
-    execute_tool,
-    _is_binary_file,
     _detect_language,
+    _is_binary_file,
     _try_repair_json,
     backup_manager,
+    execute_tool,
+    find_files,
+    grep_search,
+    is_command_safe,
+    list_directory,
+    read_file,
+    replace_file_content,
+    run_command_impl,
+    write_file_with_diff,
 )
 from aizen.utils import Struct
 
@@ -56,86 +55,86 @@ class TestReadFile:
         assert "bytes" in result
 
 
-class TestEditFile:
-    """Tests for the edit_file tool."""
+class TestReplaceFileContent:
+    """Tests for the replace_file_content tool."""
 
-    def test_edit_existing_content(self, sample_file):
-        result = edit_file(
+    def test_replace_existing_content(self, sample_file):
+        result = replace_file_content(
             sample_file,
             'print("Hello, world!")',
             'print("Hello, Aizen!")',
+            1, 999,
             auto_approve=True,
         )
         assert "✓" in result
         with open(sample_file) as f:
             assert 'print("Hello, Aizen!")' in f.read()
 
-    def test_edit_nonexistent_file(self, tmp_dir):
-        result = edit_file(
+    def test_replace_nonexistent_file(self, tmp_dir):
+        result = replace_file_content(
             os.path.join(tmp_dir, "nonexistent.py"),
             "old",
             "new",
+            1, 999,
             auto_approve=True,
         )
         assert "Error" in result
         assert "does not exist" in result
 
-    def test_edit_content_not_found(self, sample_file):
-        result = edit_file(
+    def test_replace_content_not_found(self, sample_file):
+        result = replace_file_content(
             sample_file,
             "this text does not exist in the file",
             "replacement",
+            1, 999,
             auto_approve=True,
         )
         assert "Error" in result
         assert "Could not find" in result
 
-    def test_edit_multiple_occurrences(self, tmp_dir):
+    def test_replace_multiple_occurrences(self, tmp_dir):
         filepath = os.path.join(tmp_dir, "dupes.py")
         with open(filepath, "w") as f:
             f.write("hello\nhello\nhello\n")
 
-        result = edit_file(filepath, "hello", "world", auto_approve=True)
+        result = replace_file_content(filepath, "hello", "world", 1, 999, auto_approve=True)
         assert "Error" in result
         assert "occurrences" in result.lower()
 
-    def test_edit_whitespace_hint_multiple(self, sample_file):
-        # Try editing with normalized whitespace but multiple matches exists
-        # To test the hint, we ensure it fails. But here our auto-heal handles simple cases.
-        # Let's create a file with two identical blocks with different whitespace.
-        pass
-
-    def test_edit_auto_heal_whitespace(self, sample_file):
-        # Provide old_content with incorrect indentation
+    def test_replace_auto_heal_whitespace(self, sample_file):
+        # Provide target_content with incorrect indentation
         bad_whitespace_old = 'def hello():\n"""Say hello."""\nprint("Hello, world!")'
         new_content = 'def hello():\n    """Say hello."""\n    print("Healed!")'
-        
-        result = edit_file(
+
+        result = replace_file_content(
             sample_file,
             bad_whitespace_old,
             new_content,
+            1, 999,
             auto_approve=True,
         )
         assert "✓" in result
         with open(sample_file) as f:
             assert 'print("Healed!")' in f.read()
 
-    def test_edit_user_deny(self, sample_file):
+    def test_replace_user_deny(self, sample_file):
         with patch("builtins.input", return_value="n"):
-            result = edit_file(
+            result = replace_file_content(
                 sample_file,
                 'print("Hello, world!")',
                 'print("changed")',
+                1, 999,
                 auto_approve=False,
             )
         assert "denied" in result.lower()
 
-    def test_edit_creates_backup(self, sample_file):
+    def test_replace_creates_backup(self, sample_file):
         initial_stack = len(backup_manager.undo_stack)
-        edit_file(
+        replace_file_content(
             sample_file,
             'print("Hello, world!")',
             'print("Hello, Aizen!")',
+            1, 999,
             auto_approve=True,
         )
         assert len(backup_manager.undo_stack) > initial_stack
@@ -230,7 +229,7 @@ class TestRunCommand:
             # Create a test directory
             test_dir = os.path.join(tmp_dir, "cd_test")
             os.makedirs(test_dir, exist_ok=True)
-            
+
             # Change to it using the tool
             result = run_command_impl(f"cd {test_dir}", auto_approve=True)
             assert "Working directory changed" in result
@@ -243,18 +242,18 @@ class TestRunCommand:
         # Start a background task
         result = run_command_impl("sleep 10", auto_approve=True, background=True)
         assert "Task started in background with ID:" in result
-        
+
         # Extract task ID
         task_id = result.split("ID: ")[1].strip()
-        
+
         # Check task status
         status = check_background_task_impl(task_id)
         assert "Status: RUNNING" in status
-        
+
         # Kill the task
         kill_result = kill_background_task_impl(task_id)
         assert "killed" in kill_result
-        
+
         # Ensure it's removed
         assert "Error: No such background task" in check_background_task_impl(task_id)
 
@@ -406,3 +405,23 @@ class TestExecuteTool:
         )
         result = execute_tool(tool_call)
         assert "def hello():" in result
+
+    def test_execute_replace_file_content(self, sample_file):
+        tool_call = Struct(
+            id="call_1",
+            type="function",
+            function=Struct(
+                name="replace_file_content",
+                arguments=json.dumps({
+                    "filepath": sample_file,
+                    "target_content": 'print("Hello, world!")',
+                    "replacement_content": 'print("Aizen Test!")',
+                    "start_line": 1,
+                    "end_line": 999
+                }),
+            ),
+        )
+        result = execute_tool(tool_call, auto_approve=True)
+        assert "✓" in result
+        with open(sample_file) as f:
+            assert 'print("Aizen Test!")' in f.read()

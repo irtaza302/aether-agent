@@ -1,19 +1,14 @@
 """Tests for aizen.utils module."""
 
 import os
-import time
-import pytest
-import shutil
-import tempfile
 
 from aizen.utils import (
-    TokenTracker,
     BackupManager,
-    truncate_output,
-    load_gitignore_patterns,
-    should_ignore,
     Struct,
+    TokenTracker,
     fetch_url_content,
+    should_ignore,
+    truncate_output,
 )
 
 
@@ -260,7 +255,7 @@ class TestGenerateDirectoryTree:
 
     def test_generate_directory_tree(self, sample_dir):
         from aizen.utils import generate_directory_tree
-        
+
         # sample_dir has:
         # src/main.py, src/utils.py
         # tests/test_main.py
@@ -270,13 +265,13 @@ class TestGenerateDirectoryTree:
         # .gitignore
 
         tree = generate_directory_tree(sample_dir)
-        
+
         # Should contain valid files
         assert "README.md" in tree
         assert "src/" in tree
         assert "main.py" in tree
         assert "tests/" in tree
-        
+
         # Should ignore node_modules and .git
         # Check for directory representations to avoid matching ".gitignore"
         assert ".git/" not in tree

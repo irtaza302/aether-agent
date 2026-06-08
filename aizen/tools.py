@@ -1,3 +1,4 @@
+import ast
 import difflib
 import fnmatch
 import json
@@ -7,12 +8,9 @@ import subprocess
 import threading
 import time
 import uuid
-import asyncio
-from pathlib import Path
 from typing import Any
 
 import questionary
-from prompt_toolkit.shortcuts import prompt
 from prompt_toolkit.styles import Style
 from rich.live import Live
 from rich.panel import Panel
@@ -43,7 +41,7 @@ def _ask_permission(prompt_text: str, auto_approve: bool = False) -> bool:
     global _session_auto_approve
     if auto_approve or _session_auto_approve:
         return True
-    
+
     # We must use synchronous input since tools run in threads
     try:
         custom_style = Style([
@@ -404,9 +402,9 @@ def _render_diff(diff_lines: list[str], filepath: str) -> None:
     diff_text = Text()
 
     # Cap diff display at 15 lines to avoid terminal spam
-    MAX_DIFF_LINES = 15
-    display_lines = diff_lines[:MAX_DIFF_LINES]
-    
+    max_diff_lines = 15
+    display_lines = diff_lines[:max_diff_lines]
+
     for line in display_lines:
         line = line.rstrip("\n")
         if not line:
@@ -425,8 +423,8 @@ def _render_diff(diff_lines: list[str], filepath: str) -> None:
         else:
             diff_text.append(line + "\n", style=Theme.MUTED)
 
-    if len(diff_lines) > MAX_DIFF_LINES:
-        remaining = len(diff_lines) - MAX_DIFF_LINES
+    if len(diff_lines) > max_diff_lines:
+        remaining = len(diff_lines) - max_diff_lines
         diff_text.append(f"... ({remaining} more diff lines)\n", style=f"italic {Theme.WARNING}")
 
     if len(diff_text) > 0:
@@ -576,7 +574,7 @@ def write_file_with_diff(filepath: str, content: str, auto_approve: bool = False
             try:
                 with open(filepath, encoding="utf-8", errors="ignore") as f:
                     old_content = f.read()
-                    
+
                 if start_line is not None and end_line is not None:
                     lines = old_content.splitlines(keepends=True)
                     sl = max(0, start_line - 1)
@@ -646,8 +644,6 @@ def write_file_with_diff(filepath: str, content: str, auto_approve: bool = False
         return f"Error writing file: {e}"
 
 
-import ast
-
 def _validate_syntax(filepath: str, file_content: str) -> str | None:
     """Return error message if syntax is invalid, else None."""
     if filepath.endswith(".py"):
@@ -663,10 +659,10 @@ def _fuzzy_find_block(file_lines: list[str], target_content: str, start_line: in
     end_idx = min(len(file_lines), end_line)
     search_lines = file_lines[start_idx:end_idx]
     search_str = "".join(search_lines)
-    
+
     if target_content in search_str:
         return target_content
-        
+
     parts = re.split(r'\s+', target_content.strip())
     escaped_parts = [re.escape(p) for p in parts if p]
     if escaped_parts:
@@ -681,21 +677,21 @@ def _fuzzy_find_block(file_lines: list[str], target_content: str, start_line: in
     target_lines = target_content.splitlines(keepends=True)
     if not target_lines:
         return None
-        
+
     best_ratio = 0
     best_match = None
     window_size = len(target_lines)
-    
+
     for i in range(len(search_lines) - window_size + 1):
         window = "".join(search_lines[i:i + window_size])
         ratio = difflib.SequenceMatcher(None, target_content, window).ratio()
         if ratio > best_ratio:
             best_ratio = ratio
             best_match = window
-            
+
     if best_ratio > 0.8:
         return best_match
-        
+
     return None
 
 def replace_file_content(filepath: str, target_content: str, replacement_content: str, start_line: int, end_line: int, allow_multiple: bool = False, auto_approve: bool = False) -> str:
@@ -720,27 +716,27 @@ def multi_replace_file_content(filepath: str, replacement_chunks: list[dict], au
 
         with open(filepath, encoding="utf-8", errors="ignore") as f:
             file_content = f.read()
-            
+
         file_lines = file_content.splitlines(keepends=True)
         new_file_content = file_content
-        
+
         for idx, chunk in enumerate(replacement_chunks):
             target = chunk["target_content"]
             replacement = chunk["replacement_content"]
             sl = chunk.get("start_line", 1)
             el = chunk.get("end_line", len(file_lines))
             allow_mult = chunk.get("allow_multiple", False)
-            
+
             actual_old = _fuzzy_find_block(file_lines, target, sl, el)
             if not actual_old:
                 return f"Error in chunk {idx+1}: Could not find the specified target_content within lines {sl}-{el}. Please check your exact text."
-                
+
             occurrence_count = new_file_content.count(actual_old)
             if occurrence_count == 0:
                 return f"Error in chunk {idx+1}: The text was found originally but is no longer present after preceding replacements."
             if occurrence_count > 1 and not allow_mult:
                 return f"Error in chunk {idx+1}: Found {occurrence_count} occurrences of the target text. Provide a more specific block or set allow_multiple=true."
-                
+
             new_file_content = new_file_content.replace(actual_old, replacement, -1 if allow_mult else 1)
             file_lines = new_file_content.splitlines(keepends=True)
 
@@ -756,7 +752,7 @@ def multi_replace_file_content(filepath: str, replacement_chunks: list[dict], au
 
         if not diff:
             return "No changes detected."
-            
+
         syntax_err = _validate_syntax(filepath, new_file_content)
         if syntax_err:
             return f"Error: The edit introduces a syntax error and was aborted.\n{syntax_err}"
@@ -885,9 +881,11 @@ def run_command_impl(command: str, auto_approve: bool = False, timeout: int = 12
 
                 # Read available stdout and stderr non-blockingly
                 reads = []
-                if proc.stdout: reads.append(proc.stdout)
-                if proc.stderr: reads.append(proc.stderr)
-                
+                if proc.stdout:
+                    reads.append(proc.stdout)
+                if proc.stderr:
+                    reads.append(proc.stderr)
+
                 if reads:
                     rlist, _, _ = select.select(reads, [], [], 0.1)
                     for fd in rlist:
@@ -1168,8 +1166,10 @@ def execute_tool(tool_call, auto_approve: bool = False) -> str:
         content = str(args.get("content", ""))
         start_line = args.get("start_line")
         end_line = args.get("end_line")
-        if start_line is not None: start_line = int(start_line)
-        if end_line is not None: end_line = int(end_line)
+        if start_line is not None:
+            start_line = int(start_line)
+        if end_line is not None:
+            end_line = int(end_line)
         tool_label.append(f" → {filepath or '?'}", style="dim")
         console.print(tool_label)
         return write_file_with_diff(filepath, content, auto_approve=auto_approve, start_line=start_line, end_line=end_line)

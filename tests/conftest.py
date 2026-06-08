@@ -1,10 +1,11 @@
 """Shared test fixtures for Aizen test suite."""
 
-import os
 import json
-import pytest
-import tempfile
+import os
 import shutil
+import tempfile
+
+import pytest
 
 
 @pytest.fixture

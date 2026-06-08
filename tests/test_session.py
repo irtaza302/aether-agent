@@ -1,10 +1,7 @@
 """Tests for aizen.session module."""
 
-import os
-import json
-import pytest
 
-from aizen.session import save_session, load_session, list_sessions
+from aizen.session import list_sessions, load_session, save_session
 from aizen.utils import TokenTracker
 
 
@@ -40,7 +37,7 @@ class TestSaveSession:
         tracker.add_usage(100, 50)
 
         messages = [{"role": "user", "content": "test"}]
-        path = save_session(messages, "tracked", tracker)
+        save_session(messages, "tracked", tracker)
 
         conn = aizen.session._get_db()
         cur = conn.execute("SELECT input_tokens, output_tokens FROM sessions WHERE name = 'tracked'")
