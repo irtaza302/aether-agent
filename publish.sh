@@ -24,7 +24,7 @@ rm -rf dist/ build/ *.egg-info
 python3 -m build
 if command -v twine &> /dev/null; then
     echo "Uploading to PyPI..."
-    twine upload dist/* || echo "⚠️ Twine upload failed or skipped. (Did you log in?)"
+    twine upload dist/aizen_ai_cli* || echo "⚠️ Twine upload failed or skipped. (Did you log in?)"
 else
     echo "⚠️ Twine not found. Skipping PyPI upload."
     echo "   (Install it with: pip install twine)"

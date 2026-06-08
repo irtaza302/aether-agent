@@ -41,7 +41,7 @@ If PyPI fails, you need to configure your PyPI token.
   username = __token__
   password = pypi-your-token-here
   ```
-- **Manual Retry**: `twine upload dist/*`
+- **Manual Retry**: `twine upload dist/aizen_ai_cli*`
 
 ### 2. NPM Authentication Fails (`EOTP`)
 If NPM fails because it requires a One-Time Password (2FA), the script cannot pass this automatically.
@@ -57,4 +57,4 @@ If NPM fails because it requires a One-Time Password (2FA), the script cannot pa
 - [ ] Ensure `MANIFEST.in` includes `requirements.txt`
 - [ ] Commit all code
 - [ ] Run `./publish.sh`
-- [ ] If PyPI/NPM fail due to auth, run them manually: `twine upload dist/*` and `cd npm-package && npm publish`
+- [ ] If PyPI/NPM fail due to auth, run them manually: `twine upload dist/aizen_ai_cli*` and `cd npm-package && npm publish`
