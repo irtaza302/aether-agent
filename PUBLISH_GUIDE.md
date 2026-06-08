@@ -52,6 +52,23 @@ If NPM fails because it requires a One-Time Password (2FA), the script cannot pa
   ```
   This will open a browser window for you to authenticate, or you can run `npm publish --otp=YOUR_CODE_HERE`.
 
+## How to Publish Manually to PyPI
+
+If you want to manually build and publish the package to PyPI without running the full `publish.sh` script:
+
+1. **Clear old builds**:
+   ```bash
+   rm -rf dist/ build/ *.egg-info
+   ```
+2. **Build the package**:
+   ```bash
+   python3 -m build
+   ```
+3. **Upload to PyPI**:
+   ```bash
+   twine upload dist/aizen_ai_cli*
+   ```
+
 ## Summary Checklist
 - [ ] Update version in 3 files (`pyproject.toml`, `aizen/config.py`, `npm-package/package.json`)
 - [ ] Ensure `MANIFEST.in` includes `requirements.txt`
