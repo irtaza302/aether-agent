@@ -2,18 +2,18 @@
 
 [![CI](https://github.com/irtaza302/aizen-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/irtaza302/aizen-agent/actions/workflows/ci.yml)
 
-A professional-grade AI coding assistant that runs directly in your terminal. Aizen reads your code, writes files with surgical precision, runs commands safely, and helps you build faster — all from a beautifully designed CLI.
+A helpful AI coding assistant you can use right in your terminal. Aizen reads your code, edits files safely, runs commands, and helps you get things done faster — all with a friendly command‑line interface.
 
 ## ✨ Features
 
 ### Core
-- **Asynchronous Architecture** — Fully asynchronous operations leveraging `asyncio` and `AsyncOpenAI` for concurrent processing, parallel tool runs, and streaming.
-- **Rich Markdown Rendering** — AI responses are rendered with full Markdown formatting (headers, code blocks, lists, bold/italic) via Rich's live display.
-- **Streaming with Live Preview** — Watch responses render in real-time inside a styled panel with an animated thinking spinner.
-- **Surgical File Editing** — The `edit_file` tool makes precise search-and-replace edits with color-coded diff previews, instead of rewriting entire files.
-- **SQLite Session Persistence** — Session storage is powered by a SQLite database (`~/.aizen_sessions/aizen.db`), auto-migrating older JSON sessions.
-- **Project-Specific Rules** — Customizes agent behavior per repository by auto-loading `.aizen_rules` or `.cursorrules` from the current working directory.
-- **Smart Autocomplete** — `@`-mention files with Tab completion that respects `.gitignore` and supports directory traversal.
+- **Runs Fast** — Uses modern async code so it stays quick and can handle many tasks at once.
+- **Nice Text Display** — Shows AI replies with clear headings, code blocks, and lists.
+- **Live Updates** — You see the answer appear step by step, like a typing effect.
+- **Careful File Changes** — The edit tool changes only the parts you need, showing a simple before‑and‑after view.
+- **Remember Your Work** — Saves your chat history in a small local database.
+- **Project Settings** — Lets each project have its own custom rules automatically.
+- **Easy File Lookup** — Type `@` and start typing a name to quickly pick a file, while ignoring hidden or ignored files.
 
 ### Tools
 Aizen has 9 built-in tools the AI can use:

@@ -21,7 +21,7 @@ logger = logging.getLogger("aizen")
 
 # Read version from installed package metadata (stays in sync with pyproject.toml).
 # Falls back to a hardcoded value only when running from source without installing.
-_FALLBACK_VERSION = "2.2.4"
+_FALLBACK_VERSION = "2.2.5"
 try:
     VERSION = _pkg_version("aizen-ai-cli")
 except PackageNotFoundError:
@@ -31,14 +31,40 @@ SESSIONS_DIR = os.path.expanduser("~/.aizen_sessions")
 BACKUPS_DIR = os.path.expanduser("~/.aizen_backups")
 DEFAULT_MODEL = "openrouter/free"
 
-AIZEN_ASCII = r"""[bold #ffabf3]
- █████╗ ██╗███████╗███████╗███╗   ██╗
-██╔══██╗██║╚══███╔╝██╔════╝████╗  ██║
-███████║██║  ███╔╝ █████╗  ██╔██╗ ██║
-██╔══██║██║ ███╔╝  ██╔══╝  ██║╚██╗██║
-██║  ██║██║███████╗███████╗██║ ╚████║
-╚═╝  ╚═╝╚═╝╚══════╝╚══════╝╚═╝  ╚═══╝
-[/bold #ffabf3]
+# ─── Theme Colors ───────────────────────────────────────────────────────────────
+# Centralized color palette — cyberpunk neon gradient
+class Theme:
+    PRIMARY = "#c084fc"       # Purple (main brand)
+    SECONDARY = "#818cf8"     # Indigo (accents)
+    ACCENT = "#22d3ee"        # Neon cyan (highlights)
+    PINK = "#f472b6"          # Hot pink (flair)
+    SUCCESS = "#4ade80"       # Vibrant green
+    WARNING = "#fbbf24"       # Amber
+    ERROR = "#f87171"         # Soft red
+    MUTED = "#6b7280"         # Slate gray (dim text)
+    TEXT = "#e2e8f0"          # Off-white (body text)
+    BORDER = "#818cf8"        # Indigo (borders/frames)
+    DIM_BORDER = "#4b5563"    # Dark gray (subtle borders)
+    SURFACE = "#1e1b2e"       # Dark purple-black (backgrounds)
+
+    # Badge prefix for system messages
+    SYS = f"[bold {PRIMARY}]◈ SYS[/bold {PRIMARY}]"
+    BADGE = f"[bold {ACCENT}]◆ AIZEN[/bold {ACCENT}]"
+
+
+AIZEN_ASCII = f"""
+[bold #c084fc]  ╔══════════════════════════════════════════════╗[/bold #c084fc]
+[bold #c084fc]  ║[/bold #c084fc]                                              [bold #c084fc]║[/bold #c084fc]
+[bold #c084fc]  ║[/bold #c084fc]  [bold #c084fc]█████[/bold #c084fc][bold #a78bfa]╗[/bold #a78bfa] [bold #a78bfa]██[/bold #a78bfa][bold #818cf8]╗[/bold #818cf8][bold #818cf8]███████[/bold #818cf8][bold #6366f1]╗[/bold #6366f1][bold #6366f1]███████[/bold #6366f1][bold #22d3ee]╗[/bold #22d3ee][bold #22d3ee]███╗   ██╗[/bold #22d3ee]  [bold #c084fc]║[/bold #c084fc]
+[bold #c084fc]  ║[/bold #c084fc]  [bold #c084fc]██╔══██[/bold #c084fc][bold #a78bfa]╗[/bold #a78bfa][bold #a78bfa]██[/bold #a78bfa][bold #818cf8]║[/bold #818cf8][bold #818cf8]╚══███╔[/bold #818cf8][bold #6366f1]╝[/bold #6366f1][bold #6366f1]██╔════[/bold #6366f1][bold #22d3ee]╝[/bold #22d3ee][bold #22d3ee]████╗  ██║[/bold #22d3ee]  [bold #c084fc]║[/bold #c084fc]
+[bold #c084fc]  ║[/bold #c084fc]  [bold #c084fc]█████[/bold #c084fc][bold #a78bfa]██║[/bold #a78bfa][bold #a78bfa]██[/bold #a78bfa][bold #818cf8]║[/bold #818cf8][bold #818cf8]  ███╔[/bold #818cf8][bold #6366f1]╝[/bold #6366f1] [bold #6366f1]█████[/bold #6366f1][bold #22d3ee]╗[/bold #22d3ee]  [bold #22d3ee]██╔██╗ ██║[/bold #22d3ee]  [bold #c084fc]║[/bold #c084fc]
+[bold #c084fc]  ║[/bold #c084fc]  [bold #c084fc]██╔══██[/bold #c084fc][bold #a78bfa]║[/bold #a78bfa][bold #a78bfa]██[/bold #a78bfa][bold #818cf8]║[/bold #818cf8][bold #818cf8] ███╔[/bold #818cf8][bold #6366f1]╝[/bold #6366f1]  [bold #6366f1]██╔══[/bold #6366f1][bold #22d3ee]╝[/bold #22d3ee]  [bold #22d3ee]██║╚██╗██║[/bold #22d3ee]  [bold #c084fc]║[/bold #c084fc]
+[bold #c084fc]  ║[/bold #c084fc]  [bold #c084fc]██║  ██[/bold #c084fc][bold #a78bfa]║[/bold #a78bfa][bold #a78bfa]██[/bold #a78bfa][bold #818cf8]║[/bold #818cf8][bold #818cf8]███████[/bold #818cf8][bold #6366f1]╗[/bold #6366f1][bold #6366f1]███████[/bold #6366f1][bold #22d3ee]╗[/bold #22d3ee][bold #22d3ee]██║ ╚████║[/bold #22d3ee]  [bold #c084fc]║[/bold #c084fc]
+[bold #c084fc]  ║[/bold #c084fc]  [bold #c084fc]╚═╝  ╚═[/bold #c084fc][bold #a78bfa]╝[/bold #a78bfa][bold #a78bfa]╚═[/bold #a78bfa][bold #818cf8]╝[/bold #818cf8][bold #818cf8]╚══════[/bold #818cf8][bold #6366f1]╝[/bold #6366f1][bold #6366f1]╚══════[/bold #6366f1][bold #22d3ee]╝[/bold #22d3ee][bold #22d3ee]╚═╝  ╚═══╝[/bold #22d3ee]  [bold #c084fc]║[/bold #c084fc]
+[bold #c084fc]  ║[/bold #c084fc]                                              [bold #c084fc]║[/bold #c084fc]
+[bold #c084fc]  ║[/bold #c084fc]     [bold #22d3ee]⚡[/bold #22d3ee] [italic #e2e8f0]AI-Powered Coding Agent[/italic #e2e8f0] [bold #22d3ee]⚡[/bold #22d3ee]            [bold #c084fc]║[/bold #c084fc]
+[bold #c084fc]  ║[/bold #c084fc]     [dim #6b7280]Made by Irtaza Malik[/dim #6b7280]                   [bold #c084fc]║[/bold #c084fc]
+[bold #c084fc]  ╚══════════════════════════════════════════════╝[/bold #c084fc]
 """
 
 # Safe commands that auto-execute without confirmation
@@ -77,22 +103,23 @@ You help users write, debug, understand, and refactor code with precision and ca
 ## Your Workflow
 1. **Understand**: Always read relevant files first. Don't guess at file contents or structure.
 2. **Plan**: Briefly explain your approach before making changes.
-3. **Implement**: Make precise, targeted changes. Use `edit_file` for modifying existing files \
-(surgical edits). Use `write_file` only for creating new files.
+3. **Implement**: Make precise, targeted changes. Use `multi_replace_file_content` for editing multiple blocks \
+or `replace_file_content` for single blocks (surgical edits). Provide line number bounds (start_line, end_line) \
+to narrow the search area. Use `write_file` only for creating new files or fully overwriting.
 4. **Verify**: After making changes, read the modified file or run tests to confirm correctness.
 
 ## Guidelines
 - Be concise but thorough in explanations.
 - Use tools iteratively to explore and understand the codebase.
 - Prefer small, focused changes over large rewrites.
-- When modifying existing files, ALWAYS use `edit_file` with the exact `old_content` to replace. \
+- When modifying existing files, ALWAYS use `replace_file_content` or `multi_replace_file_content` with line bounds. \
 Never use `write_file` to modify existing files unless a full rewrite is truly needed.
 - Run tests or linting commands after changes when applicable.
 - If unsure about something, ask the user rather than guessing.
 - Use fenced code blocks with language identifiers when showing code.
 
 ## Tool Preferences
-- `edit_file` > `write_file` for modifications (surgical precision)
+- `multi_replace_file_content` / `replace_file_content` > `write_file` for modifications (surgical precision)
 - `grep_search` for finding patterns across the codebase
 - `find_files` for locating files by name
 - `list_directory` for understanding project structure
@@ -134,7 +161,7 @@ def build_system_prompt(config: dict | None = None) -> str:
                         f"The following rules are defined by the project maintainers "
                         f"(from {rules_file}):\n\n{project_rules}"
                     )
-                    console.print(f"[bold #ffabf3][SYSTEM][/bold #ffabf3] Project rules loaded from [#d3fbff]{rules_file}[/#d3fbff]")
+                    console.print(f"{Theme.SYS} Project rules loaded from [#d3fbff]{rules_file}[/#d3fbff]")
                 break  # Only use the first rules file found
             except Exception as e:
                 logger.debug("Failed to load project rules from %s: %s", rules_file, e)

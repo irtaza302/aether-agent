@@ -8,7 +8,7 @@ from datetime import datetime
 
 from rich.table import Table
 
-from .config import BACKUPS_DIR
+from .config import BACKUPS_DIR, Theme
 from .logging_config import logger
 
 # ─── Optional tiktoken for accurate token counting ─────────────────────────────
@@ -118,9 +118,14 @@ class TokenTracker:
         enc = _get_tiktoken_encoding()
         method = "tiktoken" if (enc and enc is not False and not self._using_api_usage) else "heuristic"
 
-        table = Table(title="📊 Session Usage", border_style="magenta", show_header=True)
-        table.add_column("Metric", style="cyan")
-        table.add_column("Value", style="white")
+        table = Table(
+            title="📊 Session Usage",
+            border_style=Theme.BORDER,
+            show_header=True,
+            header_style=f"bold {Theme.PRIMARY}",
+        )
+        table.add_column("Metric", style=Theme.ACCENT)
+        table.add_column("Value", style=Theme.TEXT)
         table.add_row("Messages", str(self.message_count))
         table.add_row("Input Tokens", f"{self.input_tokens:,}")
         table.add_row("Output Tokens", f"{self.output_tokens:,}")

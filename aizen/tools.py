@@ -7,24 +7,89 @@ import subprocess
 import threading
 import time
 import uuid
+import asyncio
+from pathlib import Path
 from typing import Any
 
+import questionary
+from prompt_toolkit.shortcuts import prompt
+from prompt_toolkit.styles import Style
 from rich.live import Live
 from rich.panel import Panel
 from rich.syntax import Syntax
 from rich.text import Text
 
-from .config import DANGEROUS_PATTERNS, SAFE_COMMAND_PREFIXES, console
+from .config import (
+    DANGEROUS_PATTERNS,
+    SAFE_COMMAND_PREFIXES,
+    Theme,
+    console,
+    load_config,
+    save_config,
+)
 from .logging_config import logger
 from .plugins import plugin_manager
 from .utils import BackupManager, load_gitignore_patterns, should_ignore, truncate_output
+
+# Global terminal lock to prevent garbled output from concurrent tool runs
+terminal_lock = threading.Lock()
+backup_manager = BackupManager()
+
+_git_warned = False
+_session_auto_approve = False
+
+def _ask_permission(prompt_text: str, auto_approve: bool = False) -> bool:
+    """Helper to handle approval prompts with a session-wide 'always' option."""
+    global _session_auto_approve
+    if auto_approve or _session_auto_approve:
+        return True
+    
+    # We must use synchronous input since tools run in threads
+    try:
+        custom_style = Style([
+            ('qmark', 'fg:#c084fc bold'),
+            ('question', 'fg:#e2e8f0 bold'),
+            ('answer', 'fg:#22d3ee bold'),
+            ('pointer', 'fg:#c084fc bold'),
+            ('highlighted', 'fg:#ffffff bold'),
+            ('selected', 'fg:#22d3ee'),
+            ('separator', 'fg:#6b7280'),
+            ('instruction', 'fg:#6b7280'),
+        ])
+
+        ans = questionary.select(
+            prompt_text.strip(),
+            choices=[
+                questionary.Choice("Yes, allow this time", "y"),
+                questionary.Choice("No, deny", "n"),
+                questionary.Choice("Always allow (YOLO mode)", "a")
+            ],
+            style=custom_style,
+            instruction=" (Use ↑/↓ arrows to select, Enter to submit)"
+        ).ask()
+
+        if not ans:
+            return False
+
+        if ans in ("a", "always"):
+            _session_auto_approve = True
+            console.print(f"  [{Theme.SUCCESS}]✓ Always allow enabled and saved for future sessions.[/{Theme.SUCCESS}]")
+            try:
+                conf = load_config()
+                conf["auto_approve"] = True
+                conf["suppress_git_warning"] = True
+                save_config(conf)
+            except Exception as e:
+                logger.debug(f"Failed to save to config: {e}")
+            return True
+        return ans == "y"
+    except (EOFError, KeyboardInterrupt):
+        return False
 
 # Global dictionary for tracking background tasks
 # task_id -> {"process": Popen, "stdout": list, "stderr": list, "command": str}
 background_tasks: dict[str, dict[str, Any]] = {}
 background_tasks_lock = threading.Lock()  # Protects background_tasks dict
-
-terminal_lock = threading.Lock()
 
 def fuzzy_match_file(filepath: str) -> str | None:
     """
@@ -88,7 +153,7 @@ tools = [
         "type": "function",
         "function": {
             "name": "write_file",
-            "description": "Creates a new file or fully overwrites an existing one. For modifying existing files, prefer edit_file instead.",
+            "description": "Creates a new file or fully overwrites an existing one. For modifying existing files, prefer replace_file_content or multi_replace_file_content.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -100,6 +165,14 @@ tools = [
                         "type": "string",
                         "description": "The full content to write.",
                     },
+                    "start_line": {
+                        "type": "integer",
+                        "description": "Optional starting line for absolute block rewrite.",
+                    },
+                    "end_line": {
+                        "type": "integer",
+                        "description": "Optional ending line for absolute block rewrite.",
+                    },
                 },
                 "required": ["filepath", "content"],
             },
@@ -108,8 +181,8 @@ tools = [
     {
         "type": "function",
         "function": {
-            "name": "edit_file",
-            "description": "Makes a surgical edit to an existing file by replacing a specific block of text with new text. Always use this instead of write_file when modifying existing files. The old_content must match exactly.",
+            "name": "replace_file_content",
+            "description": "Edits a single contiguous block of an existing file. Uses start_line and end_line bounds to locate the target_content reliably.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -117,16 +190,60 @@ tools = [
                         "type": "string",
                         "description": "Path to the file to edit.",
                     },
-                    "old_content": {
+                    "target_content": {
                         "type": "string",
-                        "description": "The exact existing text block to find and replace. Must match the file content exactly.",
+                        "description": "The exact existing text block to replace.",
                     },
-                    "new_content": {
+                    "replacement_content": {
                         "type": "string",
                         "description": "The replacement text.",
                     },
+                    "start_line": {
+                        "type": "integer",
+                        "description": "Starting line number (1-indexed) to search within.",
+                    },
+                    "end_line": {
+                        "type": "integer",
+                        "description": "Ending line number (1-indexed) to search within.",
+                    },
+                    "allow_multiple": {
+                        "type": "boolean",
+                        "description": "If true, replaces all occurrences within the bounds.",
+                    }
                 },
-                "required": ["filepath", "old_content", "new_content"],
+                "required": ["filepath", "target_content", "replacement_content", "start_line", "end_line"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "multi_replace_file_content",
+            "description": "Edits multiple non-adjacent blocks of an existing file in a single pass.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "filepath": {
+                        "type": "string",
+                        "description": "Path to the file to edit.",
+                    },
+                    "replacement_chunks": {
+                        "type": "array",
+                        "description": "List of chunks to replace.",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "target_content": { "type": "string" },
+                                "replacement_content": { "type": "string" },
+                                "start_line": { "type": "integer" },
+                                "end_line": { "type": "integer" },
+                                "allow_multiple": { "type": "boolean" }
+                            },
+                            "required": ["target_content", "replacement_content", "start_line", "end_line"]
+                        }
+                    }
+                },
+                "required": ["filepath", "replacement_chunks"],
             },
         },
     },
@@ -286,23 +403,31 @@ def _render_diff(diff_lines: list[str], filepath: str) -> None:
     """Render a unified diff with rich terminal formatting."""
     diff_text = Text()
 
-    for line in diff_lines:
+    # Cap diff display at 15 lines to avoid terminal spam
+    MAX_DIFF_LINES = 15
+    display_lines = diff_lines[:MAX_DIFF_LINES]
+    
+    for line in display_lines:
         line = line.rstrip("\n")
         if not line:
             continue
 
         if line.startswith("+++") or line.startswith("---"):
-            diff_text.append(line + "\n", style="bold cyan")
+            diff_text.append(line + "\n", style=f"bold {Theme.ACCENT}")
         elif line.startswith("@@"):
-            diff_text.append(line + "\n", style="cyan")
+            diff_text.append(line + "\n", style=Theme.SECONDARY)
         elif line.startswith("+"):
             # Green text on a very dark green background
-            diff_text.append(line + "\n", style="green on #0e2a14")
+            diff_text.append(line + "\n", style=f"{Theme.SUCCESS} on #0a1f10")
         elif line.startswith("-"):
             # Red text on a very dark red background
-            diff_text.append(line + "\n", style="red on #3b1414")
+            diff_text.append(line + "\n", style=f"{Theme.ERROR} on #2a0f0f")
         else:
-            diff_text.append(line + "\n", style="dim")
+            diff_text.append(line + "\n", style=Theme.MUTED)
+
+    if len(diff_lines) > MAX_DIFF_LINES:
+        remaining = len(diff_lines) - MAX_DIFF_LINES
+        diff_text.append(f"... ({remaining} more diff lines)\n", style=f"italic {Theme.WARNING}")
 
     if len(diff_text) > 0:
         console.print(diff_text)
@@ -352,6 +477,14 @@ def _check_git_dirty(filepath: str) -> None:
         return
 
     try:
+        conf = load_config()
+        if conf.get("suppress_git_warning", False):
+            _git_warned = True
+            return
+    except Exception:
+        pass
+
+    try:
         abs_dir = os.path.dirname(os.path.abspath(filepath))
         # Check if we are in a git repo
         repo_dir = subprocess.run(
@@ -367,10 +500,10 @@ def _check_git_dirty(filepath: str) -> None:
 
         if status:
             console.print(
-                "\n  [bold yellow]⚠️  Git Safety Warning:[/bold yellow] "
-                "[yellow]You have uncommitted changes in this repository.[/yellow]\n"
-                "  [dim]Aizen's modifications could mix with your uncommitted work.\n"
-                "  Consider committing or stashing your changes before proceeding.[/dim]\n"
+                f"\n  [bold yellow]⚠️  Git Safety Warning:[/bold yellow] "
+                f"[{Theme.WARNING}]You have uncommitted changes in this repository.[/{Theme.WARNING}]\n"
+                f"  [{Theme.MUTED}]Aizen's modifications could mix with your uncommitted work.\n"
+                f"  Consider committing or stashing your changes before proceeding.[/{Theme.MUTED}]\n"
             )
             _git_warned = True
     except Exception:
@@ -425,8 +558,8 @@ def read_file(filepath: str) -> str:
         return f"Error reading file: {e}"
 
 
-def write_file_with_diff(filepath: str, content: str, auto_approve: bool = False) -> str:
-    """Write/overwrite a file with diff preview and optional auto-approval."""
+def write_file_with_diff(filepath: str, content: str, auto_approve: bool = False, start_line: int | None = None, end_line: int | None = None) -> str:
+    """Write/overwrite a file with diff preview and optional auto-approval. Supports block rewriting."""
     logger.debug("write_file: %s (%d bytes)", filepath, len(content))
     try:
         _check_git_dirty(filepath)
@@ -443,6 +576,19 @@ def write_file_with_diff(filepath: str, content: str, auto_approve: bool = False
             try:
                 with open(filepath, encoding="utf-8", errors="ignore") as f:
                     old_content = f.read()
+                    
+                if start_line is not None and end_line is not None:
+                    lines = old_content.splitlines(keepends=True)
+                    sl = max(0, start_line - 1)
+                    el = min(len(lines), end_line)
+                    new_content = "".join(lines[:sl]) + content
+                    if not new_content.endswith("\n") and lines[el:]:
+                        new_content += "\n"
+                    new_content += "".join(lines[el:])
+                    content = new_content
+
+                if old_content == content:
+                    return f"No changes to write for {filepath}"
             except Exception as e:
                 logger.debug("Failed to read old content for %s: %s", filepath, e)
 
@@ -461,8 +607,8 @@ def write_file_with_diff(filepath: str, content: str, auto_approve: bool = False
 
             console.print(
                 Panel(
-                    f"[bold magenta]Aizen wants to overwrite:[/bold magenta] [cyan]{filepath}[/cyan]",
-                    border_style="magenta",
+                    f"[bold {Theme.ACCENT}]◆ AIZEN[/bold {Theme.ACCENT}] [{Theme.TEXT}]wants to overwrite:[/{Theme.TEXT}] [bold {Theme.ACCENT}]{filepath}[/bold {Theme.ACCENT}]",
+                    border_style=Theme.BORDER,
                 )
             )
             _render_diff(diff, filepath)
@@ -475,8 +621,8 @@ def write_file_with_diff(filepath: str, content: str, auto_approve: bool = False
 
             console.print(
                 Panel(
-                    f"[bold magenta]Aizen wants to create:[/bold magenta] [cyan]{filepath}[/cyan]",
-                    border_style="magenta",
+                    f"[bold {Theme.ACCENT}]◆ AIZEN[/bold {Theme.ACCENT}] [{Theme.TEXT}]wants to create:[/{Theme.TEXT}] [bold {Theme.ACCENT}]{filepath}[/bold {Theme.ACCENT}]",
+                    border_style=Theme.BORDER,
                 )
             )
             lang = _detect_language(filepath)
@@ -484,10 +630,8 @@ def write_file_with_diff(filepath: str, content: str, auto_approve: bool = False
             console.print(syntax)
 
         # YOLO mode: skip confirmation
-        if not auto_approve:
-            with terminal_lock:
-                confirmation = input("  Allow? (y/n): ").strip().lower()
-            if confirmation != "y":
+        with terminal_lock:
+            if not _ask_permission("  ▸ Allow?", auto_approve):
                 return "User denied file write operation."
 
         # Create backup before overwriting
@@ -502,9 +646,68 @@ def write_file_with_diff(filepath: str, content: str, auto_approve: bool = False
         return f"Error writing file: {e}"
 
 
-def edit_file(filepath: str, old_content: str, new_content: str, auto_approve: bool = False) -> str:
-    """Surgical edit with diff preview and optional auto-approval."""
-    logger.debug("edit_file: %s", filepath)
+import ast
+
+def _validate_syntax(filepath: str, file_content: str) -> str | None:
+    """Return error message if syntax is invalid, else None."""
+    if filepath.endswith(".py"):
+        try:
+            ast.parse(file_content)
+        except SyntaxError as e:
+            return f"SyntaxError in Python code: {e.msg} at line {e.lineno}, col {e.offset}"
+    return None
+
+def _fuzzy_find_block(file_lines: list[str], target_content: str, start_line: int, end_line: int) -> str | None:
+    """Find the best match for target_content within the specified line bounds."""
+    start_idx = max(0, start_line - 1)
+    end_idx = min(len(file_lines), end_line)
+    search_lines = file_lines[start_idx:end_idx]
+    search_str = "".join(search_lines)
+    
+    if target_content in search_str:
+        return target_content
+        
+    parts = re.split(r'\s+', target_content.strip())
+    escaped_parts = [re.escape(p) for p in parts if p]
+    if escaped_parts:
+        pattern_str = r'\s+'.join(escaped_parts)
+        try:
+            matches = list(re.finditer(pattern_str, search_str))
+            if len(matches) == 1:
+                return matches[0].group(0)
+        except Exception:
+            pass
+
+    target_lines = target_content.splitlines(keepends=True)
+    if not target_lines:
+        return None
+        
+    best_ratio = 0
+    best_match = None
+    window_size = len(target_lines)
+    
+    for i in range(len(search_lines) - window_size + 1):
+        window = "".join(search_lines[i:i + window_size])
+        ratio = difflib.SequenceMatcher(None, target_content, window).ratio()
+        if ratio > best_ratio:
+            best_ratio = ratio
+            best_match = window
+            
+    if best_ratio > 0.8:
+        return best_match
+        
+    return None
+
+def replace_file_content(filepath: str, target_content: str, replacement_content: str, start_line: int, end_line: int, allow_multiple: bool = False, auto_approve: bool = False) -> str:
+    """Edits a single contiguous block of an existing file."""
+    return multi_replace_file_content(
+        filepath,
+        [{"target_content": target_content, "replacement_content": replacement_content, "start_line": start_line, "end_line": end_line, "allow_multiple": allow_multiple}],
+        auto_approve
+    )
+
+def multi_replace_file_content(filepath: str, replacement_chunks: list[dict], auto_approve: bool = False) -> str:
+    """Edits multiple non-adjacent blocks of an existing file."""
     try:
         _check_git_dirty(filepath)
         if not os.path.exists(filepath):
@@ -517,45 +720,30 @@ def edit_file(filepath: str, old_content: str, new_content: str, auto_approve: b
 
         with open(filepath, encoding="utf-8", errors="ignore") as f:
             file_content = f.read()
+            
+        file_lines = file_content.splitlines(keepends=True)
+        new_file_content = file_content
+        
+        for idx, chunk in enumerate(replacement_chunks):
+            target = chunk["target_content"]
+            replacement = chunk["replacement_content"]
+            sl = chunk.get("start_line", 1)
+            el = chunk.get("end_line", len(file_lines))
+            allow_mult = chunk.get("allow_multiple", False)
+            
+            actual_old = _fuzzy_find_block(file_lines, target, sl, el)
+            if not actual_old:
+                return f"Error in chunk {idx+1}: Could not find the specified target_content within lines {sl}-{el}. Please check your exact text."
+                
+            occurrence_count = new_file_content.count(actual_old)
+            if occurrence_count == 0:
+                return f"Error in chunk {idx+1}: The text was found originally but is no longer present after preceding replacements."
+            if occurrence_count > 1 and not allow_mult:
+                return f"Error in chunk {idx+1}: Found {occurrence_count} occurrences of the target text. Provide a more specific block or set allow_multiple=true."
+                
+            new_file_content = new_file_content.replace(actual_old, replacement, -1 if allow_mult else 1)
+            file_lines = new_file_content.splitlines(keepends=True)
 
-        # Check if old_content exists in the file
-        occurrence_count = file_content.count(old_content)
-        if occurrence_count == 0:
-            # Attempt auto-healing by using a whitespace-agnostic regex
-            parts = re.split(r'\s+', old_content.strip())
-            escaped_parts = [re.escape(p) for p in parts if p]
-            if escaped_parts:
-                pattern_str = r'\s+'.join(escaped_parts)
-                try:
-                    matches = list(re.finditer(pattern_str, file_content))
-                    if len(matches) == 1:
-                        # Exactly one match found! Auto-heal
-                        actual_old = matches[0].group(0)
-                        old_content = actual_old
-                        console.print(f"  [dim yellow]⚡ Auto-healed whitespace mismatch in {os.path.basename(filepath)}[/dim yellow]")
-                        occurrence_count = 1
-                    elif len(matches) > 1:
-                        return (
-                            f"Error: Exact match not found, and fuzzy match found {len(matches)} occurrences. "
-                            "Please be more specific."
-                        )
-                except Exception as e:
-                    logger.debug("Auto-heal regex failed: %s", e)
-
-        if occurrence_count == 0:
-            return (
-                f"Error: Could not find the specified text in {filepath}. "
-                f"Please read the file first to get the exact content."
-            )
-
-        if occurrence_count > 1:
-            return (
-                f"Error: Found {occurrence_count} occurrences of the target text in {filepath}. "
-                f"Please provide a more specific/unique block to match exactly one location."
-            )
-
-        # Show diff preview
-        new_file_content = file_content.replace(old_content, new_content, 1)
         diff = list(
             difflib.unified_diff(
                 file_content.splitlines(keepends=True),
@@ -568,29 +756,28 @@ def edit_file(filepath: str, old_content: str, new_content: str, auto_approve: b
 
         if not diff:
             return "No changes detected."
+            
+        syntax_err = _validate_syntax(filepath, new_file_content)
+        if syntax_err:
+            return f"Error: The edit introduces a syntax error and was aborted.\n{syntax_err}"
 
         console.print(
             Panel(
-                f"[bold magenta]Aizen wants to edit:[/bold magenta] [cyan]{filepath}[/cyan]",
-                border_style="magenta",
+                f"[bold {Theme.ACCENT}]◆ AIZEN[/bold {Theme.ACCENT}] [{Theme.TEXT}]wants to edit:[/{Theme.TEXT}] [bold {Theme.ACCENT}]{filepath}[/bold {Theme.ACCENT}]",
+                border_style=Theme.BORDER,
             )
         )
         _render_diff(diff, filepath)
 
-        # YOLO mode: skip confirmation
-        if not auto_approve:
-            with terminal_lock:
-                confirmation = input("  Apply edit? (y/n): ").strip().lower()
-            if confirmation != "y":
+        with terminal_lock:
+            if not _ask_permission("  ▸ Apply edit?", auto_approve):
                 return "User denied the edit."
 
-        # Create backup
         backup_manager.backup(filepath)
-
         with open(filepath, "w", encoding="utf-8") as f:
             f.write(new_file_content)
 
-        return f"✓ Successfully edited {filepath}"
+        return f"✓ Successfully applied {len(replacement_chunks)} replacement(s) to {filepath}"
     except Exception as e:
         return f"Error editing file: {e}"
 
@@ -632,17 +819,16 @@ def run_command_impl(command: str, auto_approve: bool = False, timeout: int = 12
             return f"Error changing directory: {e}"
     safe = is_command_safe(command)
 
-    if not safe and not auto_approve:
+    if not safe:
         console.print(
             Panel(
-                f"[bold magenta]Aizen wants to run:[/bold magenta]\n\n[white]{command}[/white]",
-                border_style="magenta",
+                f"[bold {Theme.ACCENT}]◆ AIZEN[/bold {Theme.ACCENT}] [{Theme.TEXT}]wants to run:[/{Theme.TEXT}]\n\n[bold {Theme.TEXT}]{command}[/bold {Theme.TEXT}]",
+                border_style=Theme.BORDER,
             )
         )
         with terminal_lock:
-            confirmation = input("  Allow? (y/n): ").strip().lower()
-        if confirmation != "y":
-            return "User denied command execution."
+            if not _ask_permission("  ▸ Allow?", auto_approve):
+                return "User denied command execution."
     elif safe:
         console.print(f"  [dim]▶ {command}{' (background)' if background else ''}[/dim]")
 
@@ -980,17 +1166,31 @@ def execute_tool(tool_call, auto_approve: bool = False) -> str:
     elif func_name == "write_file":
         filepath = str(args.get("filepath", ""))
         content = str(args.get("content", ""))
+        start_line = args.get("start_line")
+        end_line = args.get("end_line")
+        if start_line is not None: start_line = int(start_line)
+        if end_line is not None: end_line = int(end_line)
         tool_label.append(f" → {filepath or '?'}", style="dim")
         console.print(tool_label)
-        return write_file_with_diff(filepath, content, auto_approve=auto_approve)
+        return write_file_with_diff(filepath, content, auto_approve=auto_approve, start_line=start_line, end_line=end_line)
 
-    elif func_name == "edit_file":
+    elif func_name == "replace_file_content":
         filepath = str(args.get("filepath", ""))
-        old_content = str(args.get("old_content", ""))
-        new_content = str(args.get("new_content", ""))
+        target = str(args.get("target_content", ""))
+        replacement = str(args.get("replacement_content", ""))
+        sl = int(args.get("start_line", 1))
+        el = int(args.get("end_line", 999999))
+        am = bool(args.get("allow_multiple", False))
         tool_label.append(f" → {filepath or '?'}", style="dim")
         console.print(tool_label)
-        return edit_file(filepath, old_content, new_content, auto_approve=auto_approve)
+        return replace_file_content(filepath, target, replacement, sl, el, am, auto_approve=auto_approve)
+
+    elif func_name == "multi_replace_file_content":
+        filepath = str(args.get("filepath", ""))
+        chunks = args.get("replacement_chunks", [])
+        tool_label.append(f" → {filepath or '?'} ({len(chunks)} chunks)", style="dim")
+        console.print(tool_label)
+        return multi_replace_file_content(filepath, chunks, auto_approve=auto_approve)
 
     elif func_name == "run_command":
         command = str(args.get("command", ""))

@@ -7,6 +7,8 @@ conversations when approaching the boundary.
 
 import json
 
+from .config import Theme
+
 # Known context window sizes for popular models (in tokens).
 # Users can override via config.
 MODEL_CONTEXT_WINDOWS: dict[str, int] = {
@@ -146,7 +148,7 @@ class ContextManager:
         """
         Generate a visual usage bar for the footer.
 
-        Example: [████████░░░░░░░░░░░░] 42%
+        Example: [▓▓▓▓▓▓▓▓▓░░░░░░░░░░░] 42%
         """
         fraction = min(self.usage_fraction, 1.0)
         filled = int(width * fraction)
@@ -154,18 +156,18 @@ class ContextManager:
 
         # Color coding based on usage
         if fraction >= AUTO_COMPACT_THRESHOLD:
-            bar_char = "█"
-            style = "bold red"
+            bar_char = "▓"
+            style = f"bold {Theme.ERROR}"
         elif fraction >= WARNING_THRESHOLD:
-            bar_char = "█"
-            style = "yellow"
+            bar_char = "▓"
+            style = f"bold {Theme.WARNING}"
         else:
-            bar_char = "█"
-            style = "green"
+            bar_char = "▓"
+            style = f"bold {Theme.SUCCESS}"
 
-        bar = f"[{style}]{bar_char * filled}[/{style}][dim]{'░' * empty}[/dim]"
-        return f"[{bar}] {self.usage_percent}%"
+        bar = f"[{style}]{bar_char * filled}[/{style}][{Theme.MUTED}]{'░' * empty}[/{Theme.MUTED}]"
+        return f"[{bar}] [{Theme.TEXT}]{self.usage_percent}%[/{Theme.TEXT}]"
 
     def get_footer_text(self) -> str:
         """Get a compact footer string showing context usage."""
-        return f"ctx: {self.get_usage_bar(10)}"
+        return f"[{Theme.MUTED}]ctx:[/{Theme.MUTED}] {self.get_usage_bar(10)}"

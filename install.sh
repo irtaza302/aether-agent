@@ -13,4 +13,4 @@ else
     echo "✅ Aizen installed successfully!"
 fi
 
-echo "🚀 You can now run 'aizen' from anywhere in your terminal."
+echo "🤖 You can now run 'aizen' from anywhere in your terminal."

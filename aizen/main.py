@@ -20,6 +20,7 @@ from prompt_toolkit import PromptSession
 from prompt_toolkit.filters import completion_is_selected, has_completions
 from prompt_toolkit.formatted_text import FormattedText
 from prompt_toolkit.key_binding import KeyBindings
+from prompt_toolkit.styles import Style
 from rich.live import Live
 from rich.markdown import Markdown
 from rich.spinner import Spinner
@@ -29,6 +30,7 @@ from .commands import AizenCompleter, handle_slash_command
 from .config import (
     AIZEN_ASCII,
     VERSION,
+    Theme,
     build_system_prompt,
     check_for_updates,
     console,
@@ -185,7 +187,7 @@ async def main_loop():
         set_active_model(config["DEFAULT_MODEL"])
 
     api_base = config.get("API_BASE_URL", "https://openrouter.ai/api/v1")
-    auto_approve = args.yolo
+    auto_approve = args.yolo or config.get("auto_approve", False)
 
     client = AsyncOpenAI(base_url=api_base, api_key=api_key)
 
@@ -212,12 +214,14 @@ async def main_loop():
 
     # ── Header ──
     console.print(AIZEN_ASCII)
-    console.print(f"[bold #ffabf3][SYSTEM][/bold #ffabf3] Initializing Aizen AI v{VERSION}...")
-    console.print(f"[bold #ffabf3][SYSTEM][/bold #ffabf3] Model: {get_active_model()}")
+    console.print(f"  [{Theme.MUTED}]{'─' * 48}[/{Theme.MUTED}]")
+    console.print(f"  {Theme.SYS} [bold {Theme.TEXT}]Initializing Aizen AI[/bold {Theme.TEXT}] [{Theme.ACCENT}]v{VERSION}[/{Theme.ACCENT}]")
+    console.print(f"  {Theme.SYS} [{Theme.TEXT}]Model:[/{Theme.TEXT}] [bold {Theme.ACCENT}]{get_active_model()}[/bold {Theme.ACCENT}]")
     if auto_approve:
-        console.print("[bold #ffabf3][SYSTEM][/bold #ffabf3] Mode: YOLO")
+        console.print(f"  {Theme.SYS} [{Theme.TEXT}]Mode:[/{Theme.TEXT}] [bold {Theme.WARNING}]⚡ YOLO[/bold {Theme.WARNING}]")
+    console.print(f"  [{Theme.MUTED}]{'─' * 48}[/{Theme.MUTED}]")
     console.print(
-        "\n[dim]Type /help for commands  •  @file to attach  •  exit to quit[/dim]\n"
+        f"\n  [{Theme.MUTED}]/help[/{Theme.MUTED}] commands  [{Theme.MUTED}]•[/{Theme.MUTED}]  [{Theme.MUTED}]@file[/{Theme.MUTED}] attach  [{Theme.MUTED}]•[/{Theme.MUTED}]  [{Theme.MUTED}]exit[/{Theme.MUTED}] quit\n"
     )
 
     # ── Keybindings ──
@@ -227,7 +231,22 @@ async def main_loop():
     def _(event):
         event.current_buffer.complete_state = None
 
-    session: PromptSession = PromptSession(completer=AizenCompleter(), key_bindings=kb)
+    # ── Custom Prompt Styling ──
+    cyberpunk_style = Style.from_dict({
+        # Completion menu layout
+        "completion-menu.completion": f"bg:{Theme.SURFACE} {Theme.TEXT}",
+        "completion-menu.completion.current": f"bg:{Theme.PRIMARY} #ffffff bold",
+        "completion-menu.meta.completion": f"bg:{Theme.SURFACE} {Theme.MUTED}",
+        "completion-menu.meta.completion.current": f"bg:{Theme.PRIMARY} #ffffff",
+        "scrollbar.background": f"bg:{Theme.DIM_BORDER}",
+        "scrollbar.button": f"bg:{Theme.ACCENT}",
+    })
+
+    session: PromptSession = PromptSession(
+        completer=AizenCompleter(), 
+        key_bindings=kb,
+        style=cyberpunk_style
+    )
 
     messages = [{"role": "system", "content": build_system_prompt(config)}]
 
@@ -235,11 +254,16 @@ async def main_loop():
         try:
             # ── Multi-line Input ──
             lines = []
+            cwd_name = os.path.basename(os.getcwd()) or "~"
             prompt_html = FormattedText([
-                ("fg:#ffabf3", "➜"),
-                ("", " "),
-                ("fg:#d3fbff", "~"),
-                ("", " ")
+                ("fg:#818cf8", "╭─"),
+                ("fg:#c084fc bold", " aizen "),
+                ("fg:#818cf8", "─ "),
+                ("fg:#22d3ee", cwd_name),
+                ("fg:#818cf8", " "),
+                ("", "\n"),
+                ("fg:#818cf8", "╰─"),
+                ("fg:#c084fc bold", " ▸ "),
             ])
             first_line = await session.prompt_async(prompt_html)
             lines.append(first_line)
@@ -266,7 +290,7 @@ async def main_loop():
                     await mcp_manager.stop()
                 except Exception:
                     logger.exception("Failed to stop MCP manager on exit")
-                console.print("[yellow]Goodbye! 👋[/yellow]")
+                console.print(f"  [{Theme.PRIMARY}]Goodbye! 👋[/{Theme.PRIMARY}]")
                 break
 
             if not user_input.strip():
@@ -342,9 +366,10 @@ async def main_loop():
                         "Processing...",
                         "Considering...",
                         "Exploring...",
+                        "Synthesizing...",
                     ]
                 )
-                spinner_display = Spinner("dots", text=Text(spinner_label, style="#8e8e93 italic"), style="#ffabf3 bold")
+                spinner_display = Spinner("dots2", text=Text(f" {spinner_label}", style=f"{Theme.MUTED} italic"), style=f"{Theme.PRIMARY} bold")
 
                 try:
                     with Live(
@@ -372,16 +397,17 @@ async def main_loop():
                             # ── Content tokens ──
                             if delta.content:
                                 full_content += delta.content
-                                # Live-render Markdown in a panel
-                                try:
-                                    # Prepend AIZEN: styling before the markdown
-                                    display_content = f"**AIZEN:** {full_content}"
-                                    rendered = Markdown(display_content)
-                                    live.update(rendered)
-                                except Exception:
-                                    # Fallback for incomplete markdown
-                                    display_text = Text.from_markup(f"[bold #ffabf3]AIZEN:[/bold #ffabf3] {full_content}")
-                                    live.update(display_text)
+                                # Live-render Markdown in a panel only if there's actual text
+                                if full_content.strip():
+                                    try:
+                                        # Prepend styled AIZEN badge before the markdown
+                                        display_content = f"**◆ AIZEN:** {full_content}"
+                                        rendered = Markdown(display_content)
+                                        live.update(rendered)
+                                    except Exception:
+                                        # Fallback for incomplete markdown
+                                        display_text = Text.from_markup(f"{Theme.BADGE} {full_content}")
+                                        live.update(display_text)
 
                             # ── Tool call tokens ──
                             if delta.tool_calls:
@@ -412,77 +438,80 @@ async def main_loop():
                                     for v in accumulated_tool_calls.values()
                                     if v["name"]
                                 ]
-                                if names and not full_content:
+                                if names and not full_content.strip():
                                     tool_text = Text()
-                                    tool_text.append("AIZEN: ", style="bold #ffabf3")
+                                    tool_text.append("  ◆ ", style=f"bold {Theme.ACCENT}")
+                                    tool_text.append("Invoking ", style=f"{Theme.TEXT}")
                                     tool_text.append(
-                                        f"Invoking [#d3fbff]{', '.join(names)}[/#d3fbff]...",
+                                        f"{', '.join(names)}",
+                                        style=f"bold {Theme.ACCENT}",
                                     )
+                                    tool_text.append(" ...", style=f"{Theme.MUTED}")
                                     live.update(tool_text)
 
                 except AuthenticationError:
                     logger.error("Authentication failed — invalid API key")
                     console.print(
-                        "\n[bold red]Authentication Error:[/bold red] Invalid API key."
+                        f"\n  [bold {Theme.ERROR}]✖ Authentication Error[/bold {Theme.ERROR}] [{Theme.TEXT}]Invalid API key.[/{Theme.TEXT}]"
                     )
                     console.print(
-                        "[dim]Hint: Run with --reset-key to enter a new key.[/dim]"
+                        f"  [{Theme.MUTED}]↳ Run with --reset-key to enter a new key.[/{Theme.MUTED}]"
                     )
                     break
                 except OpenAIRateLimitError:
                     logger.warning("Rate limited by API")
                     console.print(
-                        "\n[bold red]Rate Limited:[/bold red] Too many requests."
+                        f"\n  [bold {Theme.ERROR}]✖ Rate Limited[/bold {Theme.ERROR}] [{Theme.TEXT}]Too many requests.[/{Theme.TEXT}]"
                     )
                     console.print(
-                        "[dim]Hint: Wait a moment and try again, or switch to a different model.[/dim]"
+                        f"  [{Theme.MUTED}]↳ Wait a moment and try again, or switch models.[/{Theme.MUTED}]"
                     )
                     break
                 except APITimeoutError:
                     logger.warning("API request timed out")
                     console.print(
-                        "\n[bold red]Timeout:[/bold red] The request timed out."
+                        f"\n  [bold {Theme.ERROR}]✖ Timeout[/bold {Theme.ERROR}] [{Theme.TEXT}]The request timed out.[/{Theme.TEXT}]"
                     )
                     console.print(
-                        "[dim]Hint: Check your internet connection and try again.[/dim]"
+                        f"  [{Theme.MUTED}]↳ Check your internet connection and try again.[/{Theme.MUTED}]"
                     )
                     break
                 except OpenAIConnectionError:
                     logger.warning("API connection failed")
                     console.print(
-                        "\n[bold red]Connection Error:[/bold red] Could not reach the API."
+                        f"\n  [bold {Theme.ERROR}]✖ Connection Error[/bold {Theme.ERROR}] [{Theme.TEXT}]Could not reach the API.[/{Theme.TEXT}]"
                     )
                     console.print(
-                        "[dim]Hint: Check your internet connection or API base URL.[/dim]"
+                        f"  [{Theme.MUTED}]↳ Check your internet connection or API base URL.[/{Theme.MUTED}]"
                     )
                     break
                 except BadRequestError as e:
                     logger.error("Bad request to API: %s", e)
-                    console.print(f"\n[bold red]Bad Request Error:[/bold red] {e}")
+                    console.print(f"\n  [bold {Theme.ERROR}]✖ Bad Request[/bold {Theme.ERROR}] [{Theme.TEXT}]{e}[/{Theme.TEXT}]")
                     console.print(
-                        "[dim]Hint: This usually means the model ID is invalid or the context length was exceeded.[/dim]"
+                        f"  [{Theme.MUTED}]↳ This usually means the model ID is invalid or context length exceeded.[/{Theme.MUTED}]"
                     )
                     break
                 except Exception as e:
                     logger.error("Unexpected API error: %s", e)
-                    console.print(f"\n[bold red]API Error:[/bold red] {e}")
+                    console.print(f"\n  [bold {Theme.ERROR}]✖ API Error[/bold {Theme.ERROR}] [{Theme.TEXT}]{e}[/{Theme.TEXT}]")
                     error_str = str(e).lower()
                     if "401" in error_str or "unauthorized" in error_str:
                         console.print(
-                            "[dim]Hint: API key may be invalid. Run with --reset-key[/dim]"
+                            f"  [{Theme.MUTED}]↳ API key may be invalid. Run with --reset-key[/{Theme.MUTED}]"
                         )
                     elif "429" in error_str or "rate" in error_str:
                         console.print(
-                            "[dim]Hint: Rate limited. Wait a moment and retry.[/dim]"
+                            f"  [{Theme.MUTED}]↳ Rate limited. Wait a moment and retry.[/{Theme.MUTED}]"
                         )
                     elif "timeout" in error_str:
                         console.print(
-                            "[dim]Hint: Request timed out. Check your connection.[/dim]"
+                            f"  [{Theme.MUTED}]↳ Request timed out. Check your connection.[/{Theme.MUTED}]"
                         )
                     break
                 except (asyncio.CancelledError, KeyboardInterrupt):
                     logger.warning("Generation cancelled by user")
-                    console.print("\n[yellow]Generation cancelled.[/yellow]")
+                    console.print(f"\n  [{Theme.WARNING}]⚡ Generation cancelled.[/{Theme.WARNING}]")
                     break
 
                 # Track tokens — prefer API-reported usage, fall back to estimation
@@ -495,8 +524,8 @@ async def main_loop():
                         (api_usage.prompt_tokens or 0) + (api_usage.completion_tokens or 0)
                     )
                 elif full_content:
-                    estimated_input = token_tracker.estimate_tokens(
-                        json.dumps(messages[-1]) if messages else ""
+                    estimated_input = context_manager.estimate_messages_tokens(
+                        messages, token_tracker.estimate_tokens
                     )
                     estimated_output = token_tracker.estimate_tokens(full_content)
                     token_tracker.add_usage(estimated_input, estimated_output)
@@ -560,29 +589,18 @@ async def main_loop():
                 # Continue the loop — model processes tool results
 
             # ── Footer ──
-            footer = Text()
-
-            # Calculate estimated cost
             cost = token_tracker.get_estimated_cost(get_active_model())
+            cost_display = f" [bold {Theme.SUCCESS}](${cost:.3f})[/bold {Theme.SUCCESS}]" if cost > 0 else ""
 
-            footer.append(
-                f"  tokens: ~{token_tracker.total_tokens:,} (${cost:.3f})  │  " if cost > 0 else f"  tokens: ~{token_tracker.total_tokens:,}  │  "
-            )
-            footer.append(
-                f"messages: {token_tracker.message_count}  │  "
-                f"model: {get_active_model()}",
-                style="dim",
-            )
-            # Add context usage bar
-            footer.append("  │  ", style="dim")
-
-            # Reconstruct string for dim printing to match existing pattern
-            cost_display = f" (${cost:.3f})" if cost > 0 else ""
             console.print(
-                f"[dim]  tokens: ~{token_tracker.total_tokens:,}{cost_display}  │  "
-                f"messages: {token_tracker.message_count}  │  "
-                f"model: {get_active_model()}  │  "
-                f"{context_manager.get_footer_text()}[/dim]\n"
+                f"\n  [{Theme.DIM_BORDER}]╰─[/{Theme.DIM_BORDER}] "
+                f"[{Theme.MUTED}]◈[/{Theme.MUTED}] [{Theme.TEXT}]{token_tracker.total_tokens:,}[/{Theme.TEXT}][{Theme.MUTED}] tokens{cost_display}[/{Theme.MUTED}]"
+                f" [{Theme.DIM_BORDER}]│[/{Theme.DIM_BORDER}] "
+                f"[{Theme.TEXT}]{token_tracker.message_count}[/{Theme.TEXT}][{Theme.MUTED}] msgs[/{Theme.MUTED}]"
+                f" [{Theme.DIM_BORDER}]│[/{Theme.DIM_BORDER}] "
+                f"[{Theme.ACCENT}]{get_active_model()}[/{Theme.ACCENT}]"
+                f" [{Theme.DIM_BORDER}]│[/{Theme.DIM_BORDER}] "
+                f"{context_manager.get_footer_text()}\n"
             )
 
         except (KeyboardInterrupt, EOFError):
@@ -597,11 +615,11 @@ async def main_loop():
                 await mcp_manager.stop()
             except Exception:
                 logger.exception("Failed to stop MCP manager on interrupt")
-            console.print("[yellow]Goodbye! 👋[/yellow]")
+            console.print(f"  [{Theme.PRIMARY}]Goodbye! 👋[/{Theme.PRIMARY}]")
             break
         except Exception as e:
             logger.exception("Unhandled error in main loop: %s", e)
-            console.print(f"\n[bold red]Error:[/bold red] {e}")
+            console.print(f"\n  [bold {Theme.ERROR}]✖ Error[/bold {Theme.ERROR}] [{Theme.TEXT}]{e}[/{Theme.TEXT}]")
 def main():
     asyncio.run(main_loop())
 
