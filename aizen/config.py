@@ -3,12 +3,12 @@ import json
 import logging
 import os
 import shutil
+import ssl
 import sys
 import threading
 import time
-import urllib.request
 import urllib.error
-import ssl
+import urllib.request
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as _pkg_version
 
@@ -21,7 +21,7 @@ logger = logging.getLogger("aizen")
 
 # Read version from installed package metadata (stays in sync with pyproject.toml).
 # Falls back to a hardcoded value only when running from source without installing.
-_FALLBACK_VERSION = "2.2.2"
+_FALLBACK_VERSION = "2.2.3"
 try:
     VERSION = _pkg_version("aizen-ai-cli")
 except PackageNotFoundError:
@@ -258,7 +258,7 @@ def _do_update_check(config: dict):
             ctx.load_verify_locations(cafile=certifi.where())
         except ImportError:
             ctx = ssl._create_unverified_context()
-            
+
         url = "https://pypi.org/pypi/aizen-ai-cli/json"
         req = urllib.request.Request(url, headers={"User-Agent": "aizen-ai-cli"})
         with urllib.request.urlopen(req, timeout=3, context=ctx) as response:
@@ -329,7 +329,7 @@ def _do_fetch_models():
             ctx.load_verify_locations(cafile=certifi.where())
         except ImportError:
             ctx = ssl._create_unverified_context()
-            
+
         req = urllib.request.Request("https://openrouter.ai/api/v1/models")
         with urllib.request.urlopen(req, timeout=5, context=ctx) as response:
             data = json.loads(response.read().decode())

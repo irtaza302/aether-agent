@@ -22,7 +22,6 @@ from prompt_toolkit.formatted_text import FormattedText
 from prompt_toolkit.key_binding import KeyBindings
 from rich.live import Live
 from rich.markdown import Markdown
-from rich.panel import Panel
 from rich.spinner import Spinner
 from rich.text import Text
 
