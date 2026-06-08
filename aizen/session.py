@@ -1,13 +1,12 @@
-import os
 import json
+import os
 import re
 import sqlite3
 from datetime import datetime
 
 from .config import SESSIONS_DIR
-from .utils import TokenTracker
 from .logging_config import logger
-
+from .utils import TokenTracker
 
 # ─── Singleton DB connection ────────────────────────────────────────────────────
 
@@ -17,7 +16,7 @@ _db_path_cached: str | None = None
 
 def _get_db() -> sqlite3.Connection:
     """Return a singleton SQLite connection, creating the schema if needed.
-    
+
     Automatically reconnects if SESSIONS_DIR has changed (e.g. during testing).
     """
     global _db_connection, _db_path_cached
@@ -55,19 +54,19 @@ def _migrate_legacy_sessions():
     """Migrate old .json files into the SQLite DB once."""
     if not os.path.exists(SESSIONS_DIR):
         return
-        
+
     conn = _get_db()
     migrated_any = False
     for f in os.listdir(SESSIONS_DIR):
         if f.endswith(".json"):
             filepath = os.path.join(SESSIONS_DIR, f)
             try:
-                with open(filepath, "r") as fh:
+                with open(filepath) as fh:
                     data = json.load(fh)
                     name = data.get("name", f[:-5])
                     msgs = data.get("messages", [])
                     saved_at = data.get("saved_at", datetime.now().isoformat())
-                    
+
                     conn.execute(
                         "INSERT OR IGNORE INTO sessions (name, saved_at, message_count, messages, input_tokens, output_tokens) VALUES (?, ?, ?, ?, ?, ?)",
                         (name, saved_at, len(msgs), json.dumps(msgs), 0, 0)
@@ -77,7 +76,7 @@ def _migrate_legacy_sessions():
                 migrated_any = True
             except Exception as e:
                 logger.debug("Failed to migrate session file %s: %s", filepath, e)
-                
+
     if migrated_any:
         conn.commit()
 
@@ -96,7 +95,7 @@ def save_session(
     input_toks = token_tracker.input_tokens if token_tracker else 0
     output_toks = token_tracker.output_tokens if token_tracker else 0
     saved_at = datetime.now().isoformat()
-    
+
     conn = _get_db()
     conn.execute(
         "REPLACE INTO sessions (name, saved_at, message_count, messages, input_tokens, output_tokens) VALUES (?, ?, ?, ?, ?, ?)",
@@ -110,7 +109,7 @@ def load_session(name: str) -> list | None:
     # If the user passed the legacy filename by accident
     if name.endswith(".json"):
         name = name[:-5]
-        
+
     conn = _get_db()
     cur = conn.execute("SELECT messages FROM sessions WHERE name = ?", (name,))
     row = cur.fetchone()
@@ -125,7 +124,7 @@ def load_session(name: str) -> list | None:
 def list_sessions() -> list:
     if not os.path.exists(SESSIONS_DIR):
         return []
-        
+
     conn = _get_db()
     cur = conn.execute("SELECT name, saved_at, message_count FROM sessions ORDER BY saved_at DESC")
     sessions = []

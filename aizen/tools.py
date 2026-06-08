@@ -1,24 +1,23 @@
-import os
-import json
-import re
-import time
 import difflib
 import fnmatch
+import json
+import os
+import re
 import subprocess
-from rich.panel import Panel
-from rich.text import Text
-from rich.syntax import Syntax
-from rich.live import Live
-from rich.progress import Progress, SpinnerColumn, TextColumn
+import threading
+import time
+import uuid
+from typing import Any
 
-from .config import console, SAFE_COMMAND_PREFIXES, DANGEROUS_PATTERNS
-from .utils import BackupManager, truncate_output, load_gitignore_patterns, should_ignore, Struct
-from .exceptions import FileOperationError, ToolExecutionError
+from rich.live import Live
+from rich.panel import Panel
+from rich.syntax import Syntax
+from rich.text import Text
+
+from .config import DANGEROUS_PATTERNS, SAFE_COMMAND_PREFIXES, console
 from .logging_config import logger
 from .plugins import plugin_manager
-import uuid
-import threading
-from typing import Any
+from .utils import BackupManager, load_gitignore_patterns, should_ignore, truncate_output
 
 # Global dictionary for tracking background tasks
 # task_id -> {"process": Popen, "stdout": list, "stderr": list, "command": str}
@@ -34,10 +33,10 @@ def fuzzy_match_file(filepath: str) -> str | None:
     """
     if not filepath or filepath.startswith("/") or filepath.startswith("~"):
         return None  # Only fuzzy match relative paths safely
-        
+
     ignore_patterns = load_gitignore_patterns()
     all_files = []
-    
+
     # Collect all available files in the tree
     for root, dirs, files in os.walk("."):
         dirs[:] = [d for d in dirs if not should_ignore(os.path.join(root, d), ignore_patterns)]
@@ -45,7 +44,7 @@ def fuzzy_match_file(filepath: str) -> str | None:
             path = os.path.relpath(os.path.join(root, f), ".")
             if not should_ignore(path, ignore_patterns):
                 all_files.append(path)
-                
+
     # Use difflib to find the closest match
     matches = difflib.get_close_matches(filepath, all_files, n=1, cutoff=0.75)
     return matches[0] if matches else None
@@ -286,12 +285,12 @@ def _detect_language(filepath: str) -> str:
 def _render_diff(diff_lines: list[str], filepath: str) -> None:
     """Render a unified diff with rich terminal formatting."""
     diff_text = Text()
-    
+
     for line in diff_lines:
         line = line.rstrip("\n")
         if not line:
             continue
-            
+
         if line.startswith("+++") or line.startswith("---"):
             diff_text.append(line + "\n", style="bold cyan")
         elif line.startswith("@@"):
@@ -351,21 +350,21 @@ def _check_git_dirty(filepath: str) -> None:
     global _git_warned
     if _git_warned:
         return
-        
+
     try:
         abs_dir = os.path.dirname(os.path.abspath(filepath))
         # Check if we are in a git repo
         repo_dir = subprocess.run(
-            ["git", "rev-parse", "--show-toplevel"], 
+            ["git", "rev-parse", "--show-toplevel"],
             cwd=abs_dir, capture_output=True, text=True, check=True
         ).stdout.strip()
-        
+
         # Check if dirty
         status = subprocess.run(
-            ["git", "status", "--porcelain"], 
+            ["git", "status", "--porcelain"],
             cwd=repo_dir, capture_output=True, text=True, check=True
         ).stdout.strip()
-        
+
         if status:
             console.print(
                 "\n  [bold yellow]⚠️  Git Safety Warning:[/bold yellow] "
@@ -413,7 +412,7 @@ def read_file(filepath: str) -> str:
                 f"  [yellow]⚠️  Large file: {filepath} ({size_kb:.0f} KB)[/yellow]"
             )
 
-        with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
+        with open(filepath, encoding="utf-8", errors="ignore") as f:
             content = f.read()
 
         line_count = content.count("\n") + (1 if content and not content.endswith("\n") else 0)
@@ -442,7 +441,7 @@ def write_file_with_diff(filepath: str, content: str, auto_approve: bool = False
 
         if exists:
             try:
-                with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
+                with open(filepath, encoding="utf-8", errors="ignore") as f:
                     old_content = f.read()
             except Exception as e:
                 logger.debug("Failed to read old content for %s: %s", filepath, e)
@@ -516,7 +515,7 @@ def edit_file(filepath: str, old_content: str, new_content: str, auto_approve: b
             else:
                 return f"Error: File '{filepath}' does not exist. Use write_file to create new files."
 
-        with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
+        with open(filepath, encoding="utf-8", errors="ignore") as f:
             file_content = f.read()
 
         # Check if old_content exists in the file
@@ -670,7 +669,7 @@ def run_command_impl(command: str, auto_approve: bool = False, timeout: int = 12
             }
             with background_tasks_lock:
                 background_tasks[task_id] = task_info
-            
+
             def stream_reader(pipe, dest_list):
                 for line in iter(pipe.readline, ''):
                     dest_list.append(line)
@@ -678,13 +677,12 @@ def run_command_impl(command: str, auto_approve: bool = False, timeout: int = 12
 
             threading.Thread(target=stream_reader, args=(proc.stdout, task_info["stdout"]), daemon=True).start()
             threading.Thread(target=stream_reader, args=(proc.stderr, task_info["stderr"]), daemon=True).start()
-            
+
             return f"Task started in background with ID: {task_id}"
 
         stdout_lines: list[str] = []
         stderr_lines: list[str] = []
         start_time = time.time()
-        shown_live = False
 
         with Live(
             Text("  ▶ Running...", style="dim italic"),
@@ -712,7 +710,6 @@ def run_command_impl(command: str, auto_approve: bool = False, timeout: int = 12
                             display.append(f"  ▶ Running ({elapsed:.0f}s)\n", style="dim italic")
                             display.append(tail.rstrip(), style="dim")
                             live.update(display)
-                            shown_live = True
 
             # Read remaining output after process exits
             if proc.stdout:
@@ -749,26 +746,26 @@ def check_background_task_impl(task_id: str) -> str:
         task = background_tasks[task_id]
 
     proc = task["process"]
-    
+
     out_lines = list(task["stdout"])
     err_lines = list(task["stderr"])
-    
+
     stdout_str = "".join(out_lines[-100:]).strip()  # Return last 100 lines to avoid massive output
     stderr_str = "".join(err_lines[-100:]).strip()
-    
+
     status = "RUNNING" if proc.poll() is None else f"FINISHED (Exit code {proc.returncode})"
-    
+
     result = f"Task: {task_id}\nCommand: {task['command']}\nStatus: {status}\n\n"
     if stdout_str:
         result += f"--- STDOUT (last 100 lines) ---\n{stdout_str}\n\n"
     if stderr_str:
         result += f"--- STDERR (last 100 lines) ---\n{stderr_str}\n"
-    
+
     # Cleanup if done
     if proc.poll() is not None:
         with background_tasks_lock:
             background_tasks.pop(task_id, None)
-        
+
     return result.strip()
 
 
@@ -780,7 +777,7 @@ def kill_background_task_impl(task_id: str) -> str:
         task = background_tasks.pop(task_id)
 
     proc = task["process"]
-    
+
     if proc.poll() is None:
         proc.kill()
         return f"Task {task_id} killed."
@@ -866,7 +863,7 @@ def grep_search(query: str, path: str = ".", is_regex: bool = False) -> str:
                 if _is_binary_file(file_path):
                     continue
                 try:
-                    with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+                    with open(file_path, encoding="utf-8", errors="ignore") as f:
                         for line_num, line in enumerate(f, 1):
                             matched = False
                             if is_regex:
@@ -1032,7 +1029,7 @@ def execute_tool(tool_call, auto_approve: bool = False) -> str:
         plugin_result = plugin_manager.execute_tool(tool_call, auto_approve=auto_approve)
         if plugin_result is not None:
             return plugin_result
-            
+
         console.print(tool_label)
         return f"Unknown tool: {func_name}"
 

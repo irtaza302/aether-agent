@@ -1,7 +1,7 @@
+import importlib.util
 import os
 import sys
-import importlib.util
-from typing import Callable, Dict, Any, List
+from collections.abc import Callable
 
 from .logging_config import logger
 
@@ -12,7 +12,7 @@ class PluginManager:
     def __init__(self):
         self.plugins = {}
         self.tools = []
-        self.handlers: Dict[str, Callable] = {}
+        self.handlers: dict[str, Callable] = {}
         self._load_plugins()
 
     def _load_plugins(self):
@@ -34,7 +34,7 @@ class PluginManager:
                         # Add to sys.modules so plugins can import each other if needed
                         sys.modules[f"aizen_plugin_{name}"] = module
                         spec.loader.exec_module(module)
-                        
+
                         if hasattr(module, "get_tools") and hasattr(module, "execute_tool"):
                             plugin_tools = module.get_tools()
                             self.plugins[name] = module
@@ -45,7 +45,7 @@ class PluginManager:
                 except Exception as e:
                     logger.error("Failed to load plugin '%s': %s", filename, e)
 
-    def get_tools(self) -> List[dict]:
+    def get_tools(self) -> list[dict]:
         return self.tools
 
     def execute_tool(self, tool_call, auto_approve: bool = False) -> str | None:

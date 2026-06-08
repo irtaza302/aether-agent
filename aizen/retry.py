@@ -6,10 +6,11 @@ auto-detects coroutine functions and uses asyncio.sleep accordingly.
 """
 
 import asyncio
-import inspect
-import time
-import random
 import functools
+import inspect
+import random
+import time
+
 from rich.text import Text
 
 from .config import console
@@ -61,9 +62,13 @@ def retry_with_backoff(
     if retryable_exceptions is None:
         # Import here to avoid circular imports — these are the standard transient errors
         from openai import (
-            RateLimitError as OpenAIRateLimitError,
-            APITimeoutError,
             APIConnectionError as OpenAIConnectionError,
+        )
+        from openai import (
+            APITimeoutError,
+        )
+        from openai import (
+            RateLimitError as OpenAIRateLimitError,
         )
         retryable_exceptions = (
             OpenAIRateLimitError,

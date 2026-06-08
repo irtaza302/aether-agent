@@ -1,10 +1,11 @@
-import os
-import time
-import shutil
 import fnmatch
+import os
 import re
+import shutil
+import time
 import urllib.request
 from datetime import datetime
+
 from rich.table import Table
 
 from .config import BACKUPS_DIR
@@ -98,7 +99,7 @@ class TokenTracker:
         if self._using_api_usage:
             return self.api_reported_output
         return self.total_output_tokens
-        
+
     def get_estimated_cost(self, active_model: str) -> float:
         """Returns the estimated cost in USD for the current session."""
         return get_model_cost(active_model, self.input_tokens, self.output_tokens)
@@ -124,7 +125,7 @@ class TokenTracker:
         table.add_row("Input Tokens", f"{self.input_tokens:,}")
         table.add_row("Output Tokens", f"{self.output_tokens:,}")
         table.add_row("Total Tokens", f"{self.total_tokens:,}")
-        
+
         if active_model:
             cost = get_model_cost(active_model, self.input_tokens, self.output_tokens)
             if cost > 0:
@@ -249,7 +250,7 @@ def load_gitignore_patterns() -> list:
     ]
     if os.path.exists(".gitignore"):
         try:
-            with open(".gitignore", "r", encoding="utf-8", errors="ignore") as f:
+            with open(".gitignore", encoding="utf-8", errors="ignore") as f:
                 for line in f:
                     line = line.strip()
                     if line and not line.startswith("#"):
@@ -283,7 +284,7 @@ def fetch_url_content(url: str, timeout: int = 10) -> str:
             content_type = response.headers.get_content_type()
             charset = response.headers.get_content_charset() or 'utf-8'
             raw_data = response.read().decode(charset, errors='replace')
-            
+
             if 'html' in content_type:
                 # Basic HTML stripping
                 # Remove script and style elements
@@ -295,7 +296,7 @@ def fetch_url_content(url: str, timeout: int = 10) -> str:
                 # Collapse whitespace
                 text = re.sub(r'\s+', ' ', text).strip()
                 return text
-            
+
             return raw_data
     except Exception as e:
         return f"Error fetching URL: {e}"
@@ -304,34 +305,34 @@ def fetch_url_content(url: str, timeout: int = 10) -> str:
 def generate_directory_tree(path: str) -> str:
     """Generate a formatted text tree of a directory, respecting .gitignore."""
     ignore_patterns = load_gitignore_patterns()
-    
+
     lines = []
-    
+
     def _walk(current_path: str, prefix: str = ""):
         try:
             entries = sorted(os.listdir(current_path))
         except PermissionError:
             lines.append(f"{prefix}[Permission Denied]")
             return
-        
+
         # Filter entries
         valid_entries = []
         for entry in entries:
             full_path = os.path.join(current_path, entry)
             if not should_ignore(full_path, ignore_patterns):
                 valid_entries.append((entry, full_path))
-                
+
         for i, (entry, full_path) in enumerate(valid_entries):
             is_last = i == (len(valid_entries) - 1)
             connector = "└── " if is_last else "├── "
-            
+
             if os.path.isdir(full_path):
                 lines.append(f"{prefix}{connector}{entry}/")
                 new_prefix = prefix + ("    " if is_last else "│   ")
                 _walk(full_path, new_prefix)
             else:
                 lines.append(f"{prefix}{connector}{entry}")
-                
+
     base_name = os.path.basename(os.path.abspath(path)) or path
     lines.append(f"{base_name}/")
     _walk(path)

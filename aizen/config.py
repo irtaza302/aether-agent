@@ -1,14 +1,17 @@
-import os
-import sys
-import json
-import time
 import getpass
+import json
+import logging
+import os
+import shutil
+import sys
 import threading
+import time
 import urllib.request
-from importlib.metadata import version as _pkg_version, PackageNotFoundError
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as _pkg_version
+
 from dotenv import load_dotenv
 from rich.console import Console
-import logging
 
 logger = logging.getLogger("aizen")
 
@@ -27,9 +30,9 @@ BACKUPS_DIR = os.path.expanduser("~/.aizen_backups")
 DEFAULT_MODEL = "nvidia/nemotron-3-super-120b-a12b:free"
 
 AIZEN_ASCII = r"""[bold magenta]
-    _    _               
-   / \  (_)_______ _ __  
-  / _ \ | |_  / _ \ '_ \ 
+    _    _
+   / \  (_)_______ _ __
+  / _ \ | |_  / _ \ '_ \
  / ___ \| |/ /  __/ | | |
 /_/   \_\_/___\___|_| |_|
 [/bold magenta]
@@ -121,7 +124,7 @@ def build_system_prompt(config: dict | None = None) -> str:
     for rules_file in _PROJECT_RULES_FILES:
         if os.path.isfile(rules_file):
             try:
-                with open(rules_file, "r", encoding="utf-8", errors="ignore") as f:
+                with open(rules_file, encoding="utf-8", errors="ignore") as f:
                     project_rules = f.read().strip()
                 if project_rules:
                     parts.append(
@@ -148,7 +151,6 @@ def get_active_model() -> str:
 
 # ─── Configuration ──────────────────────────────────────────────────────────────
 
-import shutil
 
 def migrate_legacy_data():
     """Migrate legacy Aether config/sessions to Aizen."""
@@ -159,7 +161,7 @@ def migrate_legacy_data():
             console.print("[dim]Migrated legacy config to ~/.aizen_config.json[/dim]")
         except Exception as e:
             logger.debug(f"Failed to migrate config: {e}")
-            
+
     legacy_sessions = os.path.expanduser("~/.aether_sessions")
     if os.path.exists(legacy_sessions) and not os.path.exists(SESSIONS_DIR):
         try:
@@ -172,7 +174,7 @@ def load_config() -> dict:
     migrate_legacy_data()
     if os.path.exists(CONFIG_PATH):
         try:
-            with open(CONFIG_PATH, 'r') as f:
+            with open(CONFIG_PATH) as f:
                 return json.load(f)
         except Exception as e:
             logger.debug("Failed to load config file: %s", e)

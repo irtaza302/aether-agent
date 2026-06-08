@@ -3,53 +3,55 @@
 Aizen AI Agent — A professional-grade AI coding assistant for your terminal.
 """
 
-import os
-import sys
-import re
-import json
-import random
 import argparse
 import asyncio
-from typing import Any
+import json
+import os
+import random
+import re
 import subprocess
+import sys
+from typing import Any
+
+from openai import APIConnectionError as OpenAIConnectionError
+from openai import APITimeoutError, AsyncOpenAI, AuthenticationError
+from openai import RateLimitError as OpenAIRateLimitError
 from prompt_toolkit import PromptSession
+from prompt_toolkit.filters import completion_is_selected, has_completions
 from prompt_toolkit.formatted_text import HTML
 from prompt_toolkit.key_binding import KeyBindings
-from prompt_toolkit.filters import has_completions, completion_is_selected
-from openai import AsyncOpenAI, AuthenticationError, RateLimitError as OpenAIRateLimitError, APITimeoutError, APIConnectionError as OpenAIConnectionError
-from rich.panel import Panel
-from rich.markdown import Markdown
-from rich.text import Text
 from rich.live import Live
+from rich.markdown import Markdown
+from rich.panel import Panel
+from rich.text import Text
 
+from .commands import AizenCompleter, handle_slash_command
 from .config import (
-    VERSION,
     AIZEN_ASCII,
-    SYSTEM_PROMPT,
+    VERSION,
     build_system_prompt,
+    check_for_updates,
     console,
     get_active_model,
-    set_active_model,
+    get_api_key,
+    get_mcp_servers,
     load_config,
     save_config,
-    get_api_key,
-    check_for_updates,
-    get_mcp_servers,
+    set_active_model,
 )
-from .utils import TokenTracker, Struct, fetch_url_content, generate_directory_tree, truncate_output
-from .session import save_session
-from .tools import tools, backup_manager, execute_tool
-from .commands import handle_slash_command, AizenCompleter
 from .context import ContextManager
+from .logging_config import logger, setup_logging
 from .mcp import MCPManager
 from .plugins import plugin_manager
 from .retry import retry_with_backoff
-from .logging_config import setup_logging, logger
+from .session import save_session
+from .tools import backup_manager, execute_tool, tools
+from .utils import Struct, TokenTracker, fetch_url_content, generate_directory_tree, truncate_output
 
 
 def inject_file_context(user_input: str) -> str:
     context_blocks = []
-    
+
     # 1. Handle command injection (@cmd:"...")
     cmd_pattern = r"(?:^|\s)@cmd:(?:\"([^\"]+)\"|\'([^\']+)\'|([^\s]+))"
     cmd_matches = re.finditer(cmd_pattern, user_input)
@@ -88,7 +90,7 @@ def inject_file_context(user_input: str) -> str:
                 )
         elif os.path.isfile(item):
             try:
-                with open(item, "r", encoding="utf-8", errors="ignore") as f:
+                with open(item, encoding="utf-8", errors="ignore") as f:
                     content = f.read()
                 context_blocks.append(
                     f'<file_context path="{item}">\n{content}\n</file_context>'
@@ -543,14 +545,14 @@ async def main_loop():
                             function=func_struct,
                         )
                         result = await asyncio.to_thread(execute_tool, tc_struct, auto_approve)
-                    
+
                     return {
                         "role": "tool",
                         "tool_call_id": tc_dict["id"],
                         "name": func_name,
                         "content": truncate_output(result),
                     }
-                
+
                 tool_results = await asyncio.gather(*[_exec_tool(tc) for tc in tool_calls_list])
                 messages.extend(tool_results)
 
@@ -558,11 +560,10 @@ async def main_loop():
 
             # ── Footer ──
             footer = Text()
-            
+
             # Calculate estimated cost
             cost = token_tracker.get_estimated_cost(get_active_model())
-            cost_str = f"${cost:.3f}" if cost > 0 else "Unknown"
-            
+
             footer.append(
                 f"  tokens: ~{token_tracker.total_tokens:,} (${cost:.3f})  │  " if cost > 0 else f"  tokens: ~{token_tracker.total_tokens:,}  │  "
             )
@@ -573,7 +574,7 @@ async def main_loop():
             )
             # Add context usage bar
             footer.append("  │  ", style="dim")
-            
+
             # Reconstruct string for dim printing to match existing pattern
             cost_display = f" (${cost:.3f})" if cost > 0 else ""
             console.print(

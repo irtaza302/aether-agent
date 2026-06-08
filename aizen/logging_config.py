@@ -5,8 +5,8 @@ Provides a rotating file logger at ~/.aizen_logs/aizen.log plus
 an optional console handler controlled by --verbose.
 """
 
-import os
 import logging
+import os
 from logging.handlers import RotatingFileHandler
 
 # ─── Constants ──────────────────────────────────────────────────────────────────

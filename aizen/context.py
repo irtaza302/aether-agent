@@ -6,10 +6,6 @@ conversations when approaching the boundary.
 """
 
 import json
-from rich.text import Text
-
-from .config import console
-
 
 # Known context window sizes for popular models (in tokens).
 # Users can override via config.

@@ -1,26 +1,27 @@
-import os
 import copy
-import subprocess
+import os
 import platform
 import re
+import subprocess
 from datetime import datetime
+
 from prompt_toolkit.completion import Completer, Completion
 from prompt_toolkit.shortcuts import prompt
 from rich.table import Table
 
 from .config import (
-    console,
-    get_active_model,
-    set_active_model,
+    BACKUPS_DIR,
     CONFIG_PATH,
     SESSIONS_DIR,
-    BACKUPS_DIR,
-    load_config
+    console,
+    get_active_model,
+    load_config,
+    set_active_model,
 )
-from .utils import TokenTracker, load_gitignore_patterns, should_ignore
-from .session import save_session, load_session, list_sessions
-from .tools import backup_manager
 from .logging_config import logger
+from .session import list_sessions, load_session, save_session
+from .tools import backup_manager
+from .utils import TokenTracker, load_gitignore_patterns, should_ignore
 
 SLASH_COMMANDS = [
     ("/help", "Show all available commands"),
@@ -130,7 +131,7 @@ async def handle_slash_command(
     cmd = parts[0].lower()
     arg = parts[1].strip() if len(parts) > 1 else ""
 
-    MODEL = get_active_model()
+    current_model = get_active_model()
 
     if cmd == "/clear":
         if len(messages) > 1:
@@ -143,27 +144,27 @@ async def handle_slash_command(
             if msg["role"] == "user" and msg.get("content"):
                 old_content = msg["content"]
                 new_content = re.sub(
-                    r'<file_context path="[^"]+">.*?</file_context>', 
-                    '[File context dropped to save tokens]', 
-                    old_content, 
+                    r'<file_context path="[^"]+">.*?</file_context>',
+                    '[File context dropped to save tokens]',
+                    old_content,
                     flags=re.DOTALL
                 )
                 new_content = re.sub(
-                    r'<url_context url="[^"]+">.*?</url_context>', 
-                    '[URL context dropped to save tokens]', 
-                    new_content, 
+                    r'<url_context url="[^"]+">.*?</url_context>',
+                    '[URL context dropped to save tokens]',
+                    new_content,
                     flags=re.DOTALL
                 )
                 new_content = re.sub(
-                    r'<directory_context path="[^"]+">.*?</directory_context>', 
-                    '[Directory context dropped to save tokens]', 
-                    new_content, 
+                    r'<directory_context path="[^"]+">.*?</directory_context>',
+                    '[Directory context dropped to save tokens]',
+                    new_content,
                     flags=re.DOTALL
                 )
                 new_content = re.sub(
-                    r'<command_context cmd="[^"]+">.*?</command_context>', 
-                    '[Command context dropped to save tokens]', 
-                    new_content, 
+                    r'<command_context cmd="[^"]+">.*?</command_context>',
+                    '[Command context dropped to save tokens]',
+                    new_content,
                     flags=re.DOTALL
                 )
                 if old_content != new_content:
@@ -181,7 +182,7 @@ async def handle_slash_command(
                 f"[green]✓ Model switched to:[/green] [bold cyan]{arg}[/bold cyan]\n"
             )
         else:
-            console.print(f"[bold]Current model:[/bold] [cyan]{MODEL}[/cyan]")
+            console.print(f"[bold]Current model:[/bold] [cyan]{current_model}[/cyan]")
             console.print("[dim]Usage: /model <model_name>[/dim]\n")
 
     elif cmd == "/help":
@@ -319,7 +320,7 @@ async def handle_slash_command(
                 f.write(
                     f"**Date:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
                 )
-                f.write(f"**Model:** {MODEL}\n\n---\n\n")
+                f.write(f"**Model:** {current_model}\n\n---\n\n")
                 for msg in messages:
                     if msg["role"] == "system":
                         continue
@@ -413,7 +414,7 @@ async def handle_slash_command(
         )
         table.add_column("Key", style="cyan")
         table.add_column("Value", style="white")
-        table.add_row("Model", MODEL)
+        table.add_row("Model", current_model)
         table.add_row(
             "API Base URL",
             config.get("API_BASE_URL", "https://openrouter.ai/api/v1"),
@@ -430,12 +431,12 @@ async def handle_slash_command(
         if not mcp_manager:
             console.print("[yellow]MCP Manager is not available.[/yellow]\n")
             return False
-            
+
         if not mcp_manager.config:
             console.print("[yellow]No MCP servers configured in ~/.aizen_config.json[/yellow]\n")
             console.print("[dim]Add an 'mcp_servers' block to your config to enable MCP plugins.[/dim]\n")
             return False
-            
+
         table = Table(
             title="🔌 Configured MCP Servers",
             border_style="magenta",
@@ -444,10 +445,10 @@ async def handle_slash_command(
         table.add_column("Server Name", style="cyan bold")
         table.add_column("Status", style="white")
         table.add_column("Tools Available", style="dim")
-        
+
         tools = mcp_manager.get_tools()
         server_tools: dict[str, list[str]] = {srv: [] for srv in mcp_manager.config.keys()}
-        
+
         for t in tools:
             name = t["function"]["name"]
             for server_name in mcp_manager.config.keys():
@@ -455,13 +456,13 @@ async def handle_slash_command(
                 if name.startswith(prefix):
                     server_tools[server_name].append(name[len(prefix):])
                     break
-                    
+
         for server_name in mcp_manager.config.keys():
             if server_name in mcp_manager.sessions:
                 status = "[green]Connected[/green]"
             else:
                 status = "[red]Disconnected / Failed[/red]"
-            
+
             tool_count = len(server_tools[server_name])
             if tool_count > 0:
                 tool_list = ", ".join(server_tools[server_name])
@@ -471,9 +472,9 @@ async def handle_slash_command(
                 tools_display = f"{tool_count} tools: {tool_list}"
             else:
                 tools_display = "0 tools"
-                
+
             table.add_row(server_name, status, tools_display)
-            
+
         console.print(table)
         console.print()
 
@@ -513,41 +514,41 @@ async def handle_slash_command(
         if not client:
             console.print("[red]API client is not available for /commit.[/red]\n")
             return False
-        
+
         try:
             # Check staged changes
             result = subprocess.run(["git", "diff", "--cached"], capture_output=True, text=True, check=True)
             diff = result.stdout.strip()
-            
+
             if not diff:
                 # Check unstaged
                 result_unstaged = subprocess.run(["git", "diff"], capture_output=True, text=True, check=True)
                 unstaged_diff = result_unstaged.stdout.strip()
-                
+
                 if not unstaged_diff:
                     console.print("[yellow]No changes found to commit.[/yellow]\n")
                     return False
-                
+
                 answer = prompt("No staged changes. Stage all current changes? [Y/n] ")
                 if answer.lower() not in ("y", "yes", ""):
                     console.print("[yellow]Commit aborted.[/yellow]\n")
                     return False
-                
+
                 subprocess.run(["git", "add", "-u"], check=True)
                 result = subprocess.run(["git", "diff", "--cached"], capture_output=True, text=True, check=True)
                 diff = result.stdout.strip()
-                
+
             if not diff:
                 console.print("[yellow]No changes staged to commit.[/yellow]\n")
                 return False
-                
+
             console.print("[dim]Generating commit message...[/dim]")
-            
+
             commit_messages = [
                 {"role": "system", "content": "You are a senior developer. Write a concise, conventional commit message for the following diff. Output ONLY the commit message, no explanation, no markdown blocks."},
                 {"role": "user", "content": f"Diff:\n{diff[:10000]}"}
             ]
-            
+
             response = await client.chat.completions.create(
                 model=get_active_model(),
                 messages=commit_messages,
@@ -556,13 +557,13 @@ async def handle_slash_command(
             commit_msg = response.choices[0].message.content.strip()
             # Remove any markdown codeblocks if model didn't listen
             commit_msg = commit_msg.replace("```text", "").replace("```", "").strip()
-            
+
             console.print("\n[bold]Generated Commit Message:[/bold]")
             console.print(f"[cyan]{commit_msg}[/cyan]\n")
-            
+
             action = prompt("Commit with this message? [Y/n/e(dit)] ")
             action = action.lower().strip()
-            
+
             if action in ("y", "yes", ""):
                 final_msg = commit_msg
             elif action in ("e", "edit"):
@@ -570,10 +571,10 @@ async def handle_slash_command(
             else:
                 console.print("[yellow]Commit aborted.[/yellow]\n")
                 return False
-                
+
             subprocess.run(["git", "commit", "-m", final_msg], check=True)
             console.print("[green]✓ Committed successfully.[/green]\n")
-            
+
         except subprocess.CalledProcessError:
             console.print("[red]Error: Not a git repository or git command failed.[/red]\n")
         except Exception as e:
