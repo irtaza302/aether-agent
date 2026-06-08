@@ -7,6 +7,8 @@ import sys
 import threading
 import time
 import urllib.request
+import urllib.error
+import ssl
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as _pkg_version
 
@@ -19,7 +21,7 @@ logger = logging.getLogger("aizen")
 
 # Read version from installed package metadata (stays in sync with pyproject.toml).
 # Falls back to a hardcoded value only when running from source without installing.
-_FALLBACK_VERSION = "2.2.1"
+_FALLBACK_VERSION = "2.2.2"
 try:
     VERSION = _pkg_version("aizen-ai-cli")
 except PackageNotFoundError:
@@ -142,9 +144,17 @@ def build_system_prompt(config: dict | None = None) -> str:
 # Global state for active model
 active_model = DEFAULT_MODEL
 
-def set_active_model(model_name: str):
+def set_active_model(model_name: str, save: bool = False):
     global active_model
     active_model = model_name
+    if save:
+        try:
+            config = load_config()
+            config["DEFAULT_MODEL"] = model_name
+            with open(CONFIG_PATH, "w") as f:
+                json.dump(config, f, indent=4)
+        except Exception as e:
+            logger.error("Failed to save default model: %s", e)
 
 def get_active_model() -> str:
     return active_model
@@ -242,9 +252,16 @@ def _do_update_check(config: dict):
     and print a notice if an update is available.
     """
     try:
+        ctx = ssl.create_default_context()
+        try:
+            import certifi
+            ctx.load_verify_locations(cafile=certifi.where())
+        except ImportError:
+            ctx = ssl._create_unverified_context()
+            
         url = "https://pypi.org/pypi/aizen-ai-cli/json"
         req = urllib.request.Request(url, headers={"User-Agent": "aizen-ai-cli"})
-        with urllib.request.urlopen(req, timeout=3) as response:
+        with urllib.request.urlopen(req, timeout=3, context=ctx) as response:
             data = json.loads(response.read().decode())
             latest = data["info"]["version"]
 
@@ -286,4 +303,61 @@ def check_for_updates(config: dict | None = None):
         return
 
     thread = threading.Thread(target=_do_update_check, args=(config,), daemon=True)
+    thread.start()
+
+# ─── OpenRouter Models Cache ────────────────────────────────────────────────────
+
+MODELS_CACHE_PATH = os.path.expanduser("~/.aizen_models.json")
+_MODELS_CACHE_TTL = 86400  # 24 hours
+
+def get_cached_models() -> list[dict]:
+    if os.path.exists(MODELS_CACHE_PATH):
+        try:
+            with open(MODELS_CACHE_PATH, encoding="utf-8") as f:
+                data = json.load(f)
+                if time.time() - data.get("timestamp", 0) < _MODELS_CACHE_TTL:
+                    return data.get("models", [])
+        except Exception as e:
+            logger.debug("Failed to load models cache: %s", e)
+    return []
+
+def _do_fetch_models():
+    try:
+        ctx = ssl.create_default_context()
+        try:
+            import certifi
+            ctx.load_verify_locations(cafile=certifi.where())
+        except ImportError:
+            ctx = ssl._create_unverified_context()
+            
+        req = urllib.request.Request("https://openrouter.ai/api/v1/models")
+        with urllib.request.urlopen(req, timeout=5, context=ctx) as response:
+            data = json.loads(response.read().decode())
+            models = data.get("data", [])
+            simplified_models = []
+            for m in models:
+                simplified_models.append({
+                    "id": m.get("id"),
+                    "name": m.get("name"),
+                    "context_length": m.get("context_length", "Unknown"),
+                    "pricing": m.get("pricing", {})
+                })
+
+            with open(MODELS_CACHE_PATH, "w", encoding="utf-8") as f:
+                json.dump({"timestamp": time.time(), "models": simplified_models}, f)
+    except Exception as e:
+        logger.debug("Failed to fetch OpenRouter models: %s", e)
+
+def fetch_openrouter_models_bg():
+    """Fetches OpenRouter models in the background if the cache is stale."""
+    if os.path.exists(MODELS_CACHE_PATH):
+        try:
+            with open(MODELS_CACHE_PATH, encoding="utf-8") as f:
+                data = json.load(f)
+                if time.time() - data.get("timestamp", 0) < _MODELS_CACHE_TTL:
+                    return
+        except Exception:
+            pass
+
+    thread = threading.Thread(target=_do_fetch_models, daemon=True)
     thread.start()

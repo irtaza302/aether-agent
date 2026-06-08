@@ -1,9 +1,9 @@
 #!/bin/bash
 set -e
 
-if [ -d "venv" ]; then
+if [ -d ".venv" ]; then
     echo "🔌 Activating virtual environment..."
-    source venv/bin/activate
+    source .venv/bin/activate
 fi
 
 echo "🚀 Starting the Aizen release process..."

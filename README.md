@@ -35,7 +35,7 @@ Aizen has 9 built-in tools the AI can use:
 | Command | Description |
 |---------|-------------|
 | `/help` | Show all available commands |
-| `/model [name]` | View or switch the active AI model |
+| `/model [name]` | View or switch the active AI model (saves as default) |
 | `/clear` | Clear conversation history |
 | `/drop` | Drop attached files/URLs/commands from history to save tokens |
 | `/save [name]` | Save current conversation to SQLite database |

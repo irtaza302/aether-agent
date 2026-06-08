@@ -32,6 +32,7 @@ from .config import (
     build_system_prompt,
     check_for_updates,
     console,
+    fetch_openrouter_models_bg,
     get_active_model,
     get_api_key,
     get_mcp_servers,
@@ -196,6 +197,9 @@ async def main_loop():
 
     # Non-blocking update check (background thread, 24h cache)
     check_for_updates(config)
+
+    # Non-blocking models fetch (background thread, 24h cache)
+    fetch_openrouter_models_bg()
 
     # Initialize MCP
     mcp_servers_config = get_mcp_servers(config)
@@ -483,6 +487,10 @@ async def main_loop():
                             "[dim]Hint: Request timed out. Check your connection.[/dim]"
                         )
                     break
+                except (asyncio.CancelledError, KeyboardInterrupt):
+                    logger.warning("Generation cancelled by user")
+                    console.print("\n[yellow]Generation cancelled.[/yellow]")
+                    break
 
                 # Track tokens — prefer API-reported usage, fall back to estimation
                 if api_usage and hasattr(api_usage, "prompt_tokens"):
@@ -601,7 +609,8 @@ async def main_loop():
         except Exception as e:
             logger.exception("Unhandled error in main loop: %s", e)
             console.print(f"\n[bold red]Error:[/bold red] {e}")
-
+def main():
+    asyncio.run(main_loop())
 
 if __name__ == "__main__":
-    asyncio.run(main_loop())
+    main()

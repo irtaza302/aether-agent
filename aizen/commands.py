@@ -15,6 +15,7 @@ from .config import (
     SESSIONS_DIR,
     console,
     get_active_model,
+    get_cached_models,
     load_config,
     set_active_model,
 )
@@ -62,16 +63,28 @@ class AizenCompleter(Completer):
         # ── Slash command completion ──
         # Only complete if '/' is the very first character typed (start of input)
         if stripped.startswith("/"):
-            # Don't complete if there's already a space (user is typing args)
             if " " not in stripped:
                 query = stripped.lower()
+                cmds_with_args = {"/model", "/save", "/load", "/export", "/checkpoint", "/restore"}
                 for cmd, description in SLASH_COMMANDS:
                     if cmd.startswith(query):
+                        completion_text = cmd + " " if cmd in cmds_with_args else cmd
                         yield Completion(
-                            cmd,
+                            completion_text,
                             start_position=-len(stripped),
                             display=cmd,
                             display_meta=description,
+                        )
+            elif stripped.startswith("/model "):
+                query = stripped[7:].lower()
+                models = get_cached_models()
+                for m in models:
+                    if m["id"].lower().startswith(query) or query in m["id"].lower() or query in m["name"].lower():
+                        yield Completion(
+                            m["id"],
+                            start_position=-len(query),
+                            display=m["id"],
+                            display_meta=m["name"]
                         )
             return
 
@@ -177,13 +190,49 @@ async def handle_slash_command(
 
     elif cmd == "/model":
         if arg:
-            set_active_model(arg)
-            console.print(
-                f"[green]✓ Model switched to:[/green] [bold cyan]{arg}[/bold cyan]\n"
-            )
+            if arg.startswith("search ") or arg == "list" or arg == "search":
+                models = get_cached_models()
+                if not models:
+                    console.print("[yellow]Model list is still fetching or unavailable. Try again in a moment.[/yellow]\n")
+                    return False
+
+                search_query = arg[7:].lower().strip() if arg.startswith("search ") else ""
+
+                table = Table(title=f"🧠 OpenRouter Models{' (Search: ' + search_query + ')' if search_query else ''}")
+                table.add_column("Model ID", style="cyan")
+                table.add_column("Name", style="white")
+                table.add_column("Context", style="dim")
+                table.add_column("Pricing", style="green")
+
+                count = 0
+                for m in models:
+                    if not search_query or search_query in m["id"].lower() or search_query in m["name"].lower():
+                        price_prompt = m.get("pricing", {}).get("prompt", "?")
+                        price_comp = m.get("pricing", {}).get("completion", "?")
+                        pricing_str = f"P: {price_prompt} C: {price_comp}"
+                        table.add_row(m["id"], m["name"], str(m.get("context_length")), pricing_str)
+                        count += 1
+                        if count >= 30:  # limit output
+                            break
+
+                console.print(table)
+                if count >= 30:
+                    console.print("[dim]... and more (showing top 30). Use `/model search <query>` to narrow down.[/dim]\n")
+                else:
+                    console.print()
+            else:
+                models = get_cached_models()
+                found = any(m["id"] == arg for m in models)
+
+                if models and not found:
+                    console.print(f"[yellow]⚠️  Warning: Model '{arg}' not found in OpenRouter API list.[/yellow]")
+
+                set_active_model(arg, save=True)
+                console.print(f"[green]✓ Model switched to:[/green] [bold cyan]{arg}[/bold cyan]\n")
         else:
             console.print(f"[bold]Current model:[/bold] [cyan]{current_model}[/cyan]")
-            console.print("[dim]Usage: /model <model_name>[/dim]\n")
+            console.print("[dim]Usage: /model <model_name>[/dim]")
+            console.print("[dim]       /model search <query>  (or `/model list`)[/dim]\n")
 
     elif cmd == "/help":
         help_table = Table(
