@@ -4,8 +4,8 @@ import fnmatch
 import json
 import os
 import re
-import subprocess
 import shutil
+import subprocess
 import tempfile
 import threading
 import time
@@ -105,7 +105,7 @@ def fuzzy_match_file(filepath: str) -> str | None:
     global _fuzzy_file_cache, _fuzzy_file_cache_time
     import time
     now = time.time()
-    
+
     if _fuzzy_file_cache is not None and (now - _fuzzy_file_cache_time) < 10:
         all_files = _fuzzy_file_cache
     else:
@@ -119,7 +119,7 @@ def fuzzy_match_file(filepath: str) -> str | None:
                 path = os.path.relpath(os.path.join(root, f), ".")
                 if not should_ignore(path, ignore_patterns):
                     all_files.append(path)
-                    
+
         _fuzzy_file_cache = all_files
         _fuzzy_file_cache_time = now
 
@@ -565,12 +565,12 @@ def get_file_outline(filepath: str) -> str:
                 filepath = match
             else:
                 return f"Error: File '{filepath}' does not exist."
-        
+
         with open(filepath, encoding="utf-8", errors="ignore") as f:
             content = f.read()
-            
+
         outline = [f"File: {filepath}\n"]
-        
+
         if filepath.endswith('.py'):
             import ast
             tree = ast.parse(content)
@@ -601,7 +601,7 @@ def get_file_outline(filepath: str) -> str:
                     outline.append(line_s)
         else:
             return f"Error: '{filepath}' language is not supported for outlining. Use read_file instead."
-            
+
         if len(outline) == 1:
             return outline[0] + "\nNo classes or functions found."
         return "\n".join(outline)
@@ -755,7 +755,7 @@ def _validate_syntax(filepath: str, file_content: str) -> str | None:
             ast.parse(file_content)
         except SyntaxError as e:
             return f"SyntaxError in Python code: {e.msg} at line {e.lineno}, col {e.offset}"
-            
+
         # Additional Linting
         if shutil.which("ruff"):
             with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as tmp:
@@ -768,7 +768,7 @@ def _validate_syntax(filepath: str, file_content: str) -> str | None:
                     return f"Ruff Linting Error:\n{output}"
             finally:
                 os.unlink(tmp_path)
-                
+
     elif filepath.endswith((".js", ".jsx", ".ts", ".tsx")):
         if shutil.which("eslint"):
             ext = os.path.splitext(filepath)[1]
@@ -1271,9 +1271,9 @@ def find_files(pattern: str, path: str = ".") -> str:
 
 
 def web_search_impl(query: str) -> str:
+    import re
     import urllib.parse
     import urllib.request
-    import re
     url = "https://html.duckduckgo.com/html/?q=" + urllib.parse.quote(query)
     try:
         req = urllib.request.Request(
@@ -1282,18 +1282,18 @@ def web_search_impl(query: str) -> str:
         )
         with urllib.request.urlopen(req, timeout=10) as response:
             html = response.read().decode('utf-8', errors='ignore')
-            
+
         results = []
         snippets = re.findall(r'<a class="result__snippet[^>]*href="([^"]+)"[^>]*>(.*?)</a>', html, re.IGNORECASE | re.DOTALL)
-        
+
         for href, text in snippets[:5]:
             clean_href = urllib.parse.unquote(href.replace('//duckduckgo.com/l/?uddg=', '').split('&')[0])
             clean_text = re.sub(r'<[^>]+>', '', text).strip()
             results.append(f"URL: {clean_href}\nSnippet: {clean_text}\n")
-            
+
         if not results:
             return "No results found or unable to parse search page."
-            
+
         return "\n".join(results)
     except Exception as e:
         return f"Error performing web search: {e}"

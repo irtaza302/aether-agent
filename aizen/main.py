@@ -45,6 +45,7 @@ from .config import (
     set_active_model,
 )
 from .context import ContextManager
+from .exceptions import APIKeyError, SessionCorruptedError
 from .logging_config import logger, setup_logging
 from .mcp import MCPManager
 from .plugins import plugin_manager
@@ -282,7 +283,7 @@ async def main_loop():
         tokens = token_tracker.total_tokens
         model = get_active_model()
         ctx_pct = context_manager.usage_percent
-        
+
         # Color coding for context usage
         if ctx_pct >= 85:
             ctx_color = "fg:#f87171" # ERROR
@@ -290,7 +291,7 @@ async def main_loop():
             ctx_color = "fg:#fbbf24" # WARNING
         else:
             ctx_color = "fg:#4ade80" # SUCCESS
-            
+
         return FormattedText([
             ("bg:#1e1b2e fg:#6b7280", " ◈ "),
             ("bg:#1e1b2e fg:#e2e8f0", f"{tokens:,} tokens"),
@@ -406,7 +407,7 @@ async def main_loop():
             if context_manager.needs_auto_compact() and len(messages) > 4:
                 console.print("[dim yellow]⚡ Context limit reached. Attempting smart pruning...[/dim yellow]")
                 dropped_count = 0
-                
+
                 # First pass: try semantic truncation (dropping file/url/dir context blocks)
                 for msg in messages[1:-2]:
                     if msg["role"] == "user" and msg.get("content"):
@@ -415,14 +416,14 @@ async def main_loop():
                         new_content = re.sub(r'<url_context url="[^"]+">.*?</url_context>', '[URL context dropped]', new_content, flags=re.DOTALL)
                         new_content = re.sub(r'<directory_context path="[^"]+">.*?</directory_context>', '[Directory context dropped]', new_content, flags=re.DOTALL)
                         new_content = re.sub(r'<command_context cmd="[^"]+">.*?</command_context>', '[Command context dropped]', new_content, flags=re.DOTALL)
-                        
+
                         if old_content != new_content:
                             msg["content"] = new_content
                             dropped_count += 1
-                
+
                 estimated_total = context_manager.estimate_messages_tokens(messages, token_tracker.estimate_tokens)
                 context_manager.update(estimated_total)
-                
+
                 # Second pass: if still over threshold, do naive summarization
                 if context_manager.needs_auto_compact() and len(messages) > 6:
                     console.print("[dim yellow]⚡ Context still full. Compacting older messages...[/dim yellow]")
@@ -440,7 +441,7 @@ async def main_loop():
                         console.print(f"[green]✓ Auto-compacted {len(middle)} messages into a summary.[/green]\n")
                 elif dropped_count > 0:
                     console.print(f"[green]✓ Pruned attached contexts from {dropped_count} past messages to save space.[/green]\n")
-                
+
                 estimated_total = context_manager.estimate_messages_tokens(messages, token_tracker.estimate_tokens)
                 context_manager.update(estimated_total)
 
@@ -453,7 +454,7 @@ async def main_loop():
                         is_auto_mode = False
                         auto_approve = args.yolo or config.get("auto_approve", False)
                         messages.append({
-                            "role": "user", 
+                            "role": "user",
                             "content": f"You have reached the maximum number of autonomous iterations ({max_auto_iterations}). Please provide a brief summary of what you have accomplished and what remains."
                         })
                         auto_iteration_count = 0
@@ -728,7 +729,6 @@ async def main_loop():
         except Exception as e:
             logger.exception("Unhandled error in main loop: %s", e)
             console.print(f"\n  [bold {Theme.ERROR}]✖ Error[/bold {Theme.ERROR}] [{Theme.TEXT}]{e}[/{Theme.TEXT}]")
-from .exceptions import APIKeyError, SessionCorruptedError
 
 def main():
     try:

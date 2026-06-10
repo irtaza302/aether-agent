@@ -270,7 +270,7 @@ def load_gitignore_patterns() -> list:
                         patterns.append(line)
         except Exception as e:
             logger.debug("Failed to load .gitignore: %s", e)
-            
+
     _gitignore_cache = patterns
     _gitignore_cache_time = now
     return patterns

@@ -4,7 +4,6 @@ import logging
 import os
 import shutil
 import ssl
-import sys
 import threading
 import time
 import urllib.error
@@ -211,7 +210,7 @@ def migrate_legacy_data():
 
 def load_config() -> dict:
     migrate_legacy_data()
-    
+
     config = {}
     # Load global config
     if os.path.exists(CONFIG_PATH):
@@ -233,7 +232,7 @@ def load_config() -> dict:
                     console.print(f"{Theme.SYS} Local config loaded from [#d3fbff]{local_config_path}[/#d3fbff]")
         except Exception as e:
             logger.debug("Failed to load local config file: %s", e)
-            
+
     return config
 
 

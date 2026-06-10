@@ -153,7 +153,7 @@ class TestWriteFile:
 
     def test_write_creates_parent_dirs(self, tmp_dir):
         filepath = os.path.join(tmp_dir, "deep", "nested", "file.py")
-        result = write_file_with_diff(filepath, "content\n", auto_approve=True)
+        result = write_file_with_diff(filepath, "print('content')\n", auto_approve=True)
         assert "✓" in result
         assert os.path.exists(filepath)
 
