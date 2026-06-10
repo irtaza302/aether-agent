@@ -166,6 +166,12 @@ def parse_args():
         action="store_true",
         help="Enable verbose logging output to console.",
     )
+    parser.add_argument(
+        "--max-iterations",
+        type=int,
+        default=25,
+        help="Maximum iterations for autonomous mode (default: 25).",
+    )
     return parser.parse_args()
 
 @retry_with_backoff(max_retries=3, backoff_base=2.0)
@@ -210,6 +216,10 @@ async def main_loop():
 
     api_base = config.get("API_BASE_URL", "https://openrouter.ai/api/v1")
     auto_approve = args.yolo or config.get("auto_approve", False)
+
+    is_auto_mode = False
+    max_auto_iterations = getattr(args, "max_iterations", 25)
+    auto_iteration_count = 0
 
     client = AsyncOpenAI(base_url=api_base, api_key=api_key)
 
@@ -359,6 +369,8 @@ async def main_loop():
                         console.print(f"  [{Theme.WARNING}]Please provide a task. Usage: /auto <task>[/{Theme.WARNING}]")
                         continue
                     auto_approve = True
+                    is_auto_mode = True
+                    auto_iteration_count = 0
                     messages.append({
                         "role": "user",
                         "content": (
@@ -434,6 +446,19 @@ async def main_loop():
 
             # ── Agent Loop ──────────────────────────────────────────────────
             while True:
+                if is_auto_mode:
+                    auto_iteration_count += 1
+                    if auto_iteration_count > max_auto_iterations:
+                        console.print(f"  [{Theme.WARNING}]⚠️  Autonomous mode reached iteration limit ({max_auto_iterations}). Exiting auto mode.[/{Theme.WARNING}]")
+                        is_auto_mode = False
+                        auto_approve = args.yolo or config.get("auto_approve", False)
+                        messages.append({
+                            "role": "user", 
+                            "content": f"You have reached the maximum number of autonomous iterations ({max_auto_iterations}). Please provide a brief summary of what you have accomplished and what remains."
+                        })
+                        auto_iteration_count = 0
+                        # Continue to let it generate the summary
+
                 full_content = ""
                 accumulated_tool_calls = {}
 
@@ -449,7 +474,10 @@ async def main_loop():
                         "Synthesizing...",
                     ]
                 )
-                spinner_display = Spinner("dots2", text=Text(f" {spinner_label}", style=f"{Theme.MUTED} italic"), style=f"{Theme.PRIMARY} bold")
+                if is_auto_mode:
+                    spinner_display = Spinner("dots2", text=Text(f" [Step {auto_iteration_count}/{max_auto_iterations}] {spinner_label}", style=f"{Theme.MUTED} italic"), style=f"{Theme.PRIMARY} bold")
+                else:
+                    spinner_display = Spinner("dots2", text=Text(f" {spinner_label}", style=f"{Theme.MUTED} italic"), style=f"{Theme.PRIMARY} bold")
 
                 try:
                     with Live(
@@ -663,7 +691,20 @@ async def main_loop():
                         "content": truncate_output(result),
                     }
 
-                tool_results = await asyncio.gather(*[_exec_tool(tc) for tc in tool_calls_list])
+                tool_results = await asyncio.gather(
+                    *[_exec_tool(tc) for tc in tool_calls_list],
+                    return_exceptions=True,
+                )
+                # Handle individual tool failures gracefully
+                for i, result in enumerate(tool_results):
+                    if isinstance(result, Exception):
+                        logger.error("Tool execution failed: %s", result)
+                        tool_results[i] = {
+                            "role": "tool",
+                            "tool_call_id": tool_calls_list[i]["id"],
+                            "name": tool_calls_list[i]["function"]["name"],
+                            "content": f"Error: Tool execution failed — {type(result).__name__}: {result}",
+                        }
                 messages.extend(tool_results)
 
                 # Continue the loop — model processes tool results
@@ -687,8 +728,19 @@ async def main_loop():
         except Exception as e:
             logger.exception("Unhandled error in main loop: %s", e)
             console.print(f"\n  [bold {Theme.ERROR}]✖ Error[/bold {Theme.ERROR}] [{Theme.TEXT}]{e}[/{Theme.TEXT}]")
+from .exceptions import APIKeyError, SessionCorruptedError
+
 def main():
-    asyncio.run(main_loop())
+    try:
+        asyncio.run(main_loop())
+    except APIKeyError as e:
+        console.print(f"[bold red]API Key Error:[/bold red] {e}")
+        sys.exit(1)
+    except SessionCorruptedError as e:
+        console.print(f"[bold red]Session Error:[/bold red] {e}")
+        sys.exit(1)
+    except KeyboardInterrupt:
+        sys.exit(0)
 
 if __name__ == "__main__":
     main()

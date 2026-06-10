@@ -19,7 +19,7 @@ A helpful AI coding assistant you can use right in your terminal. Aizen reads yo
 - **Smart Context Pruning** — Automatically drops old, large file attachments first when hitting the context limit before resorting to LLM summarization.
 
 ### Tools
-Aizen has 9 built-in tools the AI can use:
+Aizen has 10 built-in tools the AI can use:
 
 | Tool | Description |
 |------|-------------|
@@ -34,6 +34,7 @@ Aizen has 9 built-in tools the AI can use:
 | `grep_search` | Search for text or regex patterns across the codebase |
 | `find_files` | Find files by glob pattern (e.g., `*.py`, `Dockerfile`) |
 | `get_file_outline` | Extract AST outline of a Python file (classes, methods, docstrings) without blowing up the context window |
+| `web_search` | Search the web for current information, docs, or API references |
 
 ### Commands
 
@@ -61,6 +62,7 @@ Aizen has 9 built-in tools the AI can use:
 
 ### Safety & UX
 - **Command Safety** — Read-only commands (`ls`, `cat`, `git status`, etc.) auto-execute. Destructive commands (`rm`, `sudo`, etc.) always require confirmation.
+- **Autonomous Limits** — The `/auto` mode enforces a strict 25-step execution limit to prevent infinite loops and runaway costs.
 - **`--yolo` Mode** — Auto-approve all operations for power users.
 - **Background Tasks** — Run builds, tests, or other long-running tasks asynchronously while continuing to interact with Aizen.
 - **File Backups** — Every file modification creates a backup. Use `/undo` to restore.

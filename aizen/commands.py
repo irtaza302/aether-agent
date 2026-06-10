@@ -287,7 +287,7 @@ async def handle_slash_command(
 
         # ── Agent ──
         help_table.add_row(f"[bold {Theme.MUTED}]── Agent ──[/bold {Theme.MUTED}]", "")
-        help_table.add_row("  🤖 /auto [task]", "Enter autonomous mode for a complex task")
+        help_table.add_row("  🤖 /auto [task]", "Enter autonomous mode for a complex task (max iterations apply)")
 
         # ── Shortcuts ──
         help_table.add_row(f"[bold {Theme.MUTED}]── Shortcuts ──[/bold {Theme.MUTED}]", "")

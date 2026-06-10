@@ -116,8 +116,9 @@ def load_session(name: str) -> list | None:
     if row:
         try:
             return json.loads(row[0])
-        except json.JSONDecodeError:
-            return None
+        except json.JSONDecodeError as e:
+            from .exceptions import SessionCorruptedError
+            raise SessionCorruptedError(f"Session '{name}' is corrupted: {e}")
     return None
 
 

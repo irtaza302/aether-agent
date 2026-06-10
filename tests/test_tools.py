@@ -158,10 +158,10 @@ class TestWriteFile:
         assert os.path.exists(filepath)
 
     def test_write_overwrite_existing(self, sample_file):
-        result = write_file_with_diff(sample_file, "new content\n", auto_approve=True)
+        result = write_file_with_diff(sample_file, "print('new content')\n", auto_approve=True)
         assert "✓" in result
         with open(sample_file) as f:
-            assert f.read() == "new content\n"
+            assert f.read() == "print('new content')\n"
 
     def test_write_no_changes(self, sample_file):
         with open(sample_file) as f:

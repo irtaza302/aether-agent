@@ -21,7 +21,7 @@ logger = logging.getLogger("aizen")
 
 # Read version from installed package metadata (stays in sync with pyproject.toml).
 # Falls back to a hardcoded value only when running from source without installing.
-_FALLBACK_VERSION = "2.3.0"
+_FALLBACK_VERSION = "2.4.0"
 try:
     VERSION = _pkg_version("aizen-ai-cli")
 except PackageNotFoundError:
@@ -83,6 +83,8 @@ DANGEROUS_PATTERNS = [
     r"\brm\s", r"\bsudo\b", r"\bchmod\b", r"\bchown\b", r"\bmkfs\b",
     r"\bdd\b", r":\(\)\{", r"\bkill\b", r"\bpkill\b", r"\bshutdown\b",
     r"\breboot\b", r">\s*/dev/", r"\bcurl\b.*\|\s*(ba)?sh",
+    r"\bmktemp\b.*>", r"\btruncate\b", r"\bmv\s+/(?!tmp)", r"chmod\s+777",
+    r"git\s+push\s+--force", r"\bdocker\s+run\b", r"\bpip\s+install\b", r"\bnpm\s+install\b",
     # Shell injection patterns
     r"`[^`]+`",           # Backtick command substitution
     r"\$\([^)]+\)",       # $() command substitution
@@ -269,8 +271,8 @@ def get_api_key(config: dict, reset: bool = False) -> str:
 
     key = getpass.getpass("API Key: ").strip()
     if not key:
-        console.print("[bold red]Error:[/bold red] API Key cannot be empty.")
-        sys.exit(1)
+        from .exceptions import APIKeyError
+        raise APIKeyError("API Key cannot be empty.")
 
     config["OPENROUTER_API_KEY"] = key
     save_config(config)

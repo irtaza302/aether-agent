@@ -91,6 +91,9 @@ def _ask_permission(prompt_text: str, auto_approve: bool = False) -> bool:
 background_tasks: dict[str, dict[str, Any]] = {}
 background_tasks_lock = threading.Lock()  # Protects background_tasks dict
 
+_fuzzy_file_cache = None
+_fuzzy_file_cache_time = 0
+
 def fuzzy_match_file(filepath: str) -> str | None:
     """
     If the exact filepath does not exist, searches the current directory tree
@@ -99,16 +102,26 @@ def fuzzy_match_file(filepath: str) -> str | None:
     if not filepath or filepath.startswith("/") or filepath.startswith("~"):
         return None  # Only fuzzy match relative paths safely
 
-    ignore_patterns = load_gitignore_patterns()
-    all_files = []
+    global _fuzzy_file_cache, _fuzzy_file_cache_time
+    import time
+    now = time.time()
+    
+    if _fuzzy_file_cache is not None and (now - _fuzzy_file_cache_time) < 10:
+        all_files = _fuzzy_file_cache
+    else:
+        ignore_patterns = load_gitignore_patterns()
+        all_files = []
 
-    # Collect all available files in the tree
-    for root, dirs, files in os.walk("."):
-        dirs[:] = [d for d in dirs if not should_ignore(os.path.join(root, d), ignore_patterns)]
-        for f in files:
-            path = os.path.relpath(os.path.join(root, f), ".")
-            if not should_ignore(path, ignore_patterns):
-                all_files.append(path)
+        # Collect all available files in the tree
+        for root, dirs, files in os.walk("."):
+            dirs[:] = [d for d in dirs if not should_ignore(os.path.join(root, d), ignore_patterns)]
+            for f in files:
+                path = os.path.relpath(os.path.join(root, f), ".")
+                if not should_ignore(path, ignore_patterns):
+                    all_files.append(path)
+                    
+        _fuzzy_file_cache = all_files
+        _fuzzy_file_cache_time = now
 
     # Use difflib to find the closest match
     matches = difflib.get_close_matches(filepath, all_files, n=1, cutoff=0.75)
@@ -385,6 +398,23 @@ tools = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "web_search",
+            "description": "Search the web for current information. Use when you need up-to-date docs, error messages, or API references.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Search query",
+                    }
+                },
+                "required": ["query"],
+            },
+        },
+    },
 ]
 
 
@@ -527,10 +557,8 @@ def _check_git_dirty(filepath: str) -> None:
         pass  # Not a git repo or git not installed
 
 def get_file_outline(filepath: str) -> str:
-    """Extract AST outline of a Python file."""
+    """Extract AST/regex outline of a Python or JS/TS file."""
     try:
-        if not filepath.endswith('.py'):
-            return f"Error: '{filepath}' is not a Python file."
         if not os.path.exists(filepath):
             match = fuzzy_match_file(filepath)
             if match:
@@ -541,24 +569,39 @@ def get_file_outline(filepath: str) -> str:
         with open(filepath, encoding="utf-8", errors="ignore") as f:
             content = f.read()
             
-        tree = ast.parse(content)
         outline = [f"File: {filepath}\n"]
         
-        for node in tree.body:
-            if isinstance(node, ast.ClassDef):
-                doc = ast.get_docstring(node)
-                doc_str = f'    """{doc}"""\n' if doc else ''
-                outline.append(f"class {node.name}:\n{doc_str}")
-                for child in node.body:
-                    if isinstance(child, ast.FunctionDef):
-                        cdoc = ast.get_docstring(child)
-                        cdoc_str = f'        """{cdoc}"""\n' if cdoc else ''
-                        outline.append(f"    def {child.name}(...):\n{cdoc_str}")
-            elif isinstance(node, ast.FunctionDef):
-                doc = ast.get_docstring(node)
-                doc_str = f'    """{doc}"""\n' if doc else ''
-                outline.append(f"def {node.name}(...):\n{doc_str}")
-                
+        if filepath.endswith('.py'):
+            import ast
+            tree = ast.parse(content)
+            for node in tree.body:
+                if isinstance(node, ast.ClassDef):
+                    doc = ast.get_docstring(node)
+                    doc_str = f'    """{doc}"""\n' if doc else ''
+                    outline.append(f"class {node.name}:\n{doc_str}")
+                    for child in node.body:
+                        if isinstance(child, ast.FunctionDef):
+                            cdoc = ast.get_docstring(child)
+                            cdoc_str = f'        """{cdoc}"""\n' if cdoc else ''
+                            outline.append(f"    def {child.name}(...):\n{cdoc_str}")
+                elif isinstance(node, ast.FunctionDef):
+                    doc = ast.get_docstring(node)
+                    doc_str = f'    """{doc}"""\n' if doc else ''
+                    outline.append(f"def {node.name}(...):\n{doc_str}")
+        elif filepath.endswith(('.js', '.ts', '.jsx', '.tsx')):
+            import re
+            lines = content.splitlines()
+            for line in lines:
+                line_s = line.strip()
+                if re.match(r'^(export\s+)?(default\s+)?class\s+\w+', line_s):
+                    outline.append(line_s)
+                elif re.match(r'^(export\s+)?(default\s+)?(async\s+)?function\s+\w+', line_s):
+                    outline.append(line_s)
+                elif re.match(r'^(export\s+)?(const|let|var)\s+\w+\s*=\s*(async\s*)?(\([^)]*\)|[^=]+)\s*=>', line_s):
+                    outline.append(line_s)
+        else:
+            return f"Error: '{filepath}' language is not supported for outlining. Use read_file instead."
+            
         if len(outline) == 1:
             return outline[0] + "\nNo classes or functions found."
         return "\n".join(outline)
@@ -1121,6 +1164,26 @@ def grep_search(query: str, path: str = ".", is_regex: bool = False) -> str:
         if not os.path.exists(path):
             return f"Error: Path '{path}' does not exist."
 
+        import shutil
+        import subprocess
+        if shutil.which("rg"):
+            args = ["rg", "-n", "-m", "50"]
+            if not is_regex:
+                args.append("-F")
+            args.extend(["-i", query, path])
+            try:
+                result = subprocess.run(args, capture_output=True, text=True, timeout=10)
+                if result.stdout:
+                    lines = result.stdout.splitlines()
+                    if len(lines) >= 50:
+                        lines.append("\n(Showing first 50 results)")
+                    return "\n".join(lines)
+                if result.returncode == 1:
+                    return "No matches found."
+            except Exception as e:
+                logger.debug("ripgrep failed, falling back to python search: %s", e)
+                # Fall back to pure Python if rg fails
+
         if is_regex:
             try:
                 pattern = re.compile(query, re.IGNORECASE)
@@ -1205,6 +1268,35 @@ def find_files(pattern: str, path: str = ".") -> str:
         return "\n".join(matches)
     except Exception as e:
         return f"Error finding files: {e}"
+
+
+def web_search_impl(query: str) -> str:
+    import urllib.parse
+    import urllib.request
+    import re
+    url = "https://html.duckduckgo.com/html/?q=" + urllib.parse.quote(query)
+    try:
+        req = urllib.request.Request(
+            url,
+            headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'}
+        )
+        with urllib.request.urlopen(req, timeout=10) as response:
+            html = response.read().decode('utf-8', errors='ignore')
+            
+        results = []
+        snippets = re.findall(r'<a class="result__snippet[^>]*href="([^"]+)"[^>]*>(.*?)</a>', html, re.IGNORECASE | re.DOTALL)
+        
+        for href, text in snippets[:5]:
+            clean_href = urllib.parse.unquote(href.replace('//duckduckgo.com/l/?uddg=', '').split('&')[0])
+            clean_text = re.sub(r'<[^>]+>', '', text).strip()
+            results.append(f"URL: {clean_href}\nSnippet: {clean_text}\n")
+            
+        if not results:
+            return "No results found or unable to parse search page."
+            
+        return "\n".join(results)
+    except Exception as e:
+        return f"Error performing web search: {e}"
 
 
 # ─── Tool Dispatcher ───────────────────────────────────────────────────────────
@@ -1313,6 +1405,12 @@ def execute_tool(tool_call, auto_approve: bool = False) -> str:
         tool_label.append(f" → '{query or '?'}'", style="dim")
         console.print(tool_label)
         return truncate_output(grep_search(query, path, is_regex))
+
+    elif func_name == "web_search":
+        query = str(args.get("query", ""))
+        tool_label.append(f" → '{query or '?'}'", style="dim")
+        console.print(tool_label)
+        return truncate_output(web_search_impl(query))
 
     elif func_name == "find_files":
         pattern = str(args.get("pattern", ""))

@@ -248,7 +248,15 @@ def truncate_output(text: str, max_chars: int = 4000) -> str:
     )
 
 
+_gitignore_cache = None
+_gitignore_cache_time = 0
+
 def load_gitignore_patterns() -> list:
+    global _gitignore_cache, _gitignore_cache_time
+    now = time.time()
+    if _gitignore_cache is not None and (now - _gitignore_cache_time) < 5:
+        return _gitignore_cache
+
     patterns = [
         ".git/", "node_modules/", "__pycache__/", "venv/", ".env",
         "dist/", "build/", "*.egg-info/", ".DS_Store",
@@ -262,6 +270,9 @@ def load_gitignore_patterns() -> list:
                         patterns.append(line)
         except Exception as e:
             logger.debug("Failed to load .gitignore: %s", e)
+            
+    _gitignore_cache = patterns
+    _gitignore_cache_time = now
     return patterns
 
 
