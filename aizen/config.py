@@ -169,12 +169,14 @@ def build_system_prompt(config: dict | None = None) -> str:
 
     return "\n".join(parts)
 
-# Global state for active model
+# Global state for active model (protected by lock for thread safety)
 active_model = DEFAULT_MODEL
+_model_lock = threading.Lock()
 
 def set_active_model(model_name: str, save: bool = False):
     global active_model
-    active_model = model_name
+    with _model_lock:
+        active_model = model_name
     if save:
         try:
             config = load_config()
@@ -185,7 +187,8 @@ def set_active_model(model_name: str, save: bool = False):
             logger.error("Failed to save default model: %s", e)
 
 def get_active_model() -> str:
-    return active_model
+    with _model_lock:
+        return active_model
 
 # ─── Configuration ──────────────────────────────────────────────────────────────
 

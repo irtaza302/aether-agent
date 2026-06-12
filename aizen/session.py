@@ -12,50 +12,19 @@ from .utils import TokenTracker
 
 _db_connection: sqlite3.Connection | None = None
 _db_path_cached: str | None = None
-
-
-def _get_db() -> sqlite3.Connection:
-    """Return a singleton SQLite connection, creating the schema if needed.
-
-    Automatically reconnects if SESSIONS_DIR has changed (e.g. during testing).
-    """
-    global _db_connection, _db_path_cached
-
-    os.makedirs(SESSIONS_DIR, exist_ok=True)
-    db_path = os.path.join(SESSIONS_DIR, "aizen.db")
-
-    # Reconnect if the path changed (supports monkeypatch in tests)
-    if _db_connection is not None and _db_path_cached == db_path:
-        return _db_connection
-
-    if _db_connection is not None:
-        try:
-            _db_connection.close()
-        except Exception:
-            pass
-
-    _db_connection = sqlite3.connect(db_path)
-    _db_path_cached = db_path
-    _db_connection.execute('''
-        CREATE TABLE IF NOT EXISTS sessions (
-            name TEXT PRIMARY KEY,
-            saved_at TEXT,
-            message_count INTEGER,
-            messages TEXT,
-            input_tokens INTEGER,
-            output_tokens INTEGER
-        )
-    ''')
-    _db_connection.commit()
-    return _db_connection
+_migration_done: bool = False
 
 
 def _migrate_legacy_sessions():
     """Migrate old .json files into the SQLite DB once."""
+    global _db_connection
     if not os.path.exists(SESSIONS_DIR):
         return
 
-    conn = _get_db()
+    if _db_connection is None:
+        return
+
+    conn = _db_connection
     migrated_any = False
     for f in os.listdir(SESSIONS_DIR):
         if f.endswith(".json"):
@@ -80,8 +49,51 @@ def _migrate_legacy_sessions():
     if migrated_any:
         conn.commit()
 
-# Run migration on import
-_migrate_legacy_sessions()
+
+def _get_db() -> sqlite3.Connection:
+    """Return a singleton SQLite connection, creating the schema if needed.
+
+    Automatically reconnects if SESSIONS_DIR has changed (e.g. during testing).
+    Runs legacy JSON migration lazily on first access.
+    """
+    global _db_connection, _db_path_cached, _migration_done
+
+    os.makedirs(SESSIONS_DIR, exist_ok=True)
+    db_path = os.path.join(SESSIONS_DIR, "aizen.db")
+
+    # Reconnect if the path changed (supports monkeypatch in tests)
+    if _db_connection is not None and _db_path_cached == db_path:
+        if not _migration_done:
+            _migrate_legacy_sessions()
+            _migration_done = True
+        return _db_connection
+
+    if _db_connection is not None:
+        try:
+            _db_connection.close()
+        except Exception:
+            pass
+
+    _db_connection = sqlite3.connect(db_path)
+    _db_path_cached = db_path
+    _db_connection.execute('''
+        CREATE TABLE IF NOT EXISTS sessions (
+            name TEXT PRIMARY KEY,
+            saved_at TEXT,
+            message_count INTEGER,
+            messages TEXT,
+            input_tokens INTEGER,
+            output_tokens INTEGER
+        )
+    ''')
+    _db_connection.commit()
+
+    # Run legacy migration lazily (only once)
+    if not _migration_done:
+        _migrate_legacy_sessions()
+        _migration_done = True
+
+    return _db_connection
 
 def save_session(
     messages: list, name: str | None = None, token_tracker: TokenTracker | None = None

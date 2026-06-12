@@ -103,7 +103,6 @@ def fuzzy_match_file(filepath: str) -> str | None:
         return None  # Only fuzzy match relative paths safely
 
     global _fuzzy_file_cache, _fuzzy_file_cache_time
-    import time
     now = time.time()
 
     if _fuzzy_file_cache is not None and (now - _fuzzy_file_cache_time) < 10:
@@ -513,10 +512,6 @@ def _try_repair_json(raw: str) -> dict | None:
 
 # ─── Tool Implementations ──────────────────────────────────────────────────────
 
-backup_manager = BackupManager()
-
-_git_warned = False
-
 def _check_git_dirty(filepath: str) -> None:
     """Warn the user once per session if they are modifying files in a dirty git repo."""
     global _git_warned
@@ -572,7 +567,6 @@ def get_file_outline(filepath: str) -> str:
         outline = [f"File: {filepath}\n"]
 
         if filepath.endswith('.py'):
-            import ast
             tree = ast.parse(content)
             for node in tree.body:
                 if isinstance(node, ast.ClassDef):
@@ -589,7 +583,6 @@ def get_file_outline(filepath: str) -> str:
                     doc_str = f'    """{doc}"""\n' if doc else ''
                     outline.append(f"def {node.name}(...):\n{doc_str}")
         elif filepath.endswith(('.js', '.ts', '.jsx', '.tsx')):
-            import re
             lines = content.splitlines()
             for line in lines:
                 line_s = line.strip()
@@ -961,7 +954,7 @@ def run_command_impl(command: str, auto_approve: bool = False, timeout: int = 12
 
     try:
         # Use Popen for streaming output with live display
-        import select
+        import select  # Not available at module level on all platforms
 
         proc = subprocess.Popen(
             command,
@@ -1164,8 +1157,7 @@ def grep_search(query: str, path: str = ".", is_regex: bool = False) -> str:
         if not os.path.exists(path):
             return f"Error: Path '{path}' does not exist."
 
-        import shutil
-        import subprocess
+        # shutil and subprocess already imported at module level
         if shutil.which("rg"):
             args = ["rg", "-n", "-m", "50"]
             if not is_regex:

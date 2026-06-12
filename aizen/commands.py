@@ -5,8 +5,10 @@ import re
 import subprocess
 from datetime import datetime
 
+import questionary
+
 from prompt_toolkit.completion import Completer, Completion
-from prompt_toolkit.shortcuts import prompt
+from prompt_toolkit import PromptSession
 from rich.table import Table
 
 from .config import (
@@ -421,12 +423,8 @@ async def handle_slash_command(
                 # Attempt LLM-based summarization for much better context retention
                 console.print(f"  [{Theme.MUTED}]Summarizing conversation with AI...[/{Theme.MUTED}]")
                 try:
-                    from openai import AsyncOpenAI as _AsyncOpenAI
-
-                    _config = load_config()
-                    _api_key = _config.get("OPENROUTER_API_KEY", "")
-                    _api_base = _config.get("API_BASE_URL", "https://openrouter.ai/api/v1")
-                    _client = _AsyncOpenAI(base_url=_api_base, api_key=_api_key)
+                    # Use the client passed to handle_slash_command
+                    _client = client
 
                     # Build a summarization request from the middle messages
                     summary_messages = [
@@ -606,8 +604,8 @@ async def handle_slash_command(
                     console.print(f"  [{Theme.WARNING}]No changes found to commit.[/{Theme.WARNING}]\n")
                     return False
 
-                answer = prompt("No staged changes. Stage all current changes? [Y/n] ")
-                if answer.lower() not in ("y", "yes", ""):
+                answer = await questionary.confirm("No staged changes. Stage all current changes?").ask_async()
+                if not answer:
                     console.print(f"  [{Theme.WARNING}]Commit aborted.[/{Theme.WARNING}]\n")
                     return False
 
@@ -631,20 +629,27 @@ async def handle_slash_command(
                 messages=commit_messages,
                 max_tokens=200,
             )
-            commit_msg = response.choices[0].message.content.strip()
+            commit_content = response.choices[0].message.content
+            commit_msg = commit_content.strip() if commit_content else ""
             # Remove any markdown codeblocks if model didn't listen
             commit_msg = commit_msg.replace("```text", "").replace("```", "").strip()
 
             console.print(f"\n  [bold {Theme.TEXT}]Generated Commit Message:[/bold {Theme.TEXT}]")
             console.print(f"  [{Theme.ACCENT}]{commit_msg}[/{Theme.ACCENT}]\n")
 
-            action = prompt("Commit with this message? [Y/n/e(dit)] ")
-            action = action.lower().strip()
+            action = await questionary.select(
+                "Commit with this message?",
+                choices=[
+                    "Yes, commit this",
+                    "Edit message",
+                    "Cancel"
+                ]
+            ).ask_async()
 
-            if action in ("y", "yes", ""):
+            if action == "Yes, commit this":
                 final_msg = commit_msg
-            elif action in ("e", "edit"):
-                final_msg = prompt("Edit message: ", default=commit_msg)
+            elif action == "Edit message":
+                final_msg = await questionary.text("Edit message:", default=commit_msg).ask_async()
             else:
                 console.print("[yellow]Commit aborted.[/yellow]\n")
                 return False

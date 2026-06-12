@@ -171,3 +171,64 @@ class ContextManager:
     def get_footer_text(self) -> str:
         """Get a compact footer string showing context usage."""
         return f"[{Theme.MUTED}]ctx:[/{Theme.MUTED}] {self.get_usage_bar(10)}"
+
+
+class ContextPruner:
+    """Handles smart pruning and summarization of old conversation context."""
+
+    @staticmethod
+    def prune_attached_contexts(messages: list[dict]) -> int:
+        """
+        Removes <file_context>, <url_context>, etc. blocks from older user messages.
+        Returns the number of messages modified.
+        """
+        import re
+        dropped_count = 0
+        
+        # Keep the system prompt and the last couple of turns intact
+        if len(messages) <= 3:
+            return 0
+
+        for msg in messages[1:-2]:
+            if msg.get("role") == "user" and msg.get("content"):
+                old_content = msg["content"]
+                new_content = re.sub(r'<file_context path="[^"]+">.*?</file_context>', '[File context dropped]', old_content, flags=re.DOTALL)
+                new_content = re.sub(r'<url_context url="[^"]+">.*?</url_context>', '[URL context dropped]', new_content, flags=re.DOTALL)
+                new_content = re.sub(r'<directory_context path="[^"]+">.*?</directory_context>', '[Directory context dropped]', new_content, flags=re.DOTALL)
+                new_content = re.sub(r'<command_context cmd="[^"]+">.*?</command_context>', '[Command context dropped]', new_content, flags=re.DOTALL)
+
+                if old_content != new_content:
+                    msg["content"] = new_content
+                    dropped_count += 1
+                    
+        return dropped_count
+
+    @staticmethod
+    def summarize_old_messages(messages: list[dict], recent_count: int = 4) -> list[dict]:
+        """
+        Condenses older messages into a naive summary to save tokens.
+        Modifies the `messages` list in place and returns the summary message text.
+        """
+        if len(messages) <= recent_count + 2:
+            return ""
+
+        system_msg = messages[0]
+        recent = messages[-recent_count:]
+        middle = messages[1:-recent_count]
+        
+        user_topics = [
+            m["content"][:100].replace('\n', ' ') 
+            for m in middle 
+            if m.get("role") == "user" and m.get("content")
+        ]
+        
+        summary = "Previous conversation summary: The user and assistant discussed " + "; ".join(user_topics[:5]) + ". The assistant helped with these requests."
+        
+        messages[:] = [
+            system_msg,
+            {"role": "user", "content": f"Previous conversation summary:\n{summary}"},
+            {"role": "assistant", "content": "Understood. I have the context. How can I continue helping?"},
+        ] + recent
+        
+        return summary
+

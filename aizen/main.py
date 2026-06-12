@@ -31,6 +31,7 @@ from rich.text import Text
 from .commands import AizenCompleter, handle_slash_command
 from .config import (
     AIZEN_ASCII,
+    DANGEROUS_PATTERNS,
     VERSION,
     Theme,
     build_system_prompt,
@@ -44,7 +45,7 @@ from .config import (
     save_config,
     set_active_model,
 )
-from .context import ContextManager
+from .context import ContextManager, ContextPruner
 from .exceptions import APIKeyError, SessionCorruptedError
 from .logging_config import logger, setup_logging
 from .mcp import MCPManager
@@ -52,6 +53,7 @@ from .plugins import plugin_manager
 from .retry import retry_with_backoff
 from .session import save_session
 from .tools import backup_manager, execute_tool, tools
+from .agent import AgentRunner
 from .utils import Struct, TokenTracker, fetch_url_content, generate_directory_tree, truncate_output
 
 
@@ -64,6 +66,18 @@ def inject_file_context(user_input: str) -> str:
     for match in cmd_matches:
         cmd = match.group(1) or match.group(2) or match.group(3)
         if cmd:
+            # Safety check: validate against dangerous patterns
+            is_dangerous = any(re.search(p, cmd) for p in DANGEROUS_PATTERNS)
+            if is_dangerous:
+                console.print(f"  [bold yellow]⚠️  Dangerous command detected:[/bold yellow] [dim]{cmd}[/dim]")
+                try:
+                    confirm = input("  ▸ Allow this command? [y/N] ").strip().lower()
+                    if confirm not in ("y", "yes"):
+                        console.print(f"  [dim yellow]⚠️  Command denied: {cmd}[/dim yellow]")
+                        continue
+                except (EOFError, KeyboardInterrupt):
+                    continue
+
             console.print(f"  [dim]⚡ Executing: {cmd}[/dim]")
             try:
                 result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=30)
@@ -406,39 +420,15 @@ async def main_loop():
             # ── Auto-compact if context is critically full ──
             if context_manager.needs_auto_compact() and len(messages) > 4:
                 console.print("[dim yellow]⚡ Context limit reached. Attempting smart pruning...[/dim yellow]")
-                dropped_count = 0
-
-                # First pass: try semantic truncation (dropping file/url/dir context blocks)
-                for msg in messages[1:-2]:
-                    if msg["role"] == "user" and msg.get("content"):
-                        old_content = msg["content"]
-                        new_content = re.sub(r'<file_context path="[^"]+">.*?</file_context>', '[File context dropped]', old_content, flags=re.DOTALL)
-                        new_content = re.sub(r'<url_context url="[^"]+">.*?</url_context>', '[URL context dropped]', new_content, flags=re.DOTALL)
-                        new_content = re.sub(r'<directory_context path="[^"]+">.*?</directory_context>', '[Directory context dropped]', new_content, flags=re.DOTALL)
-                        new_content = re.sub(r'<command_context cmd="[^"]+">.*?</command_context>', '[Command context dropped]', new_content, flags=re.DOTALL)
-
-                        if old_content != new_content:
-                            msg["content"] = new_content
-                            dropped_count += 1
-
+                
+                dropped_count = ContextPruner.prune_attached_contexts(messages)
                 estimated_total = context_manager.estimate_messages_tokens(messages, token_tracker.estimate_tokens)
                 context_manager.update(estimated_total)
 
-                # Second pass: if still over threshold, do naive summarization
                 if context_manager.needs_auto_compact() and len(messages) > 6:
                     console.print("[dim yellow]⚡ Context still full. Compacting older messages...[/dim yellow]")
-                    system_msg = messages[0]
-                    recent = messages[-4:]
-                    middle = messages[1:-4]
-                    if middle:
-                        user_topics = [m["content"][:100] for m in middle if m["role"] == "user" and m.get("content")]
-                        summary = "Previous conversation summary: The user and assistant discussed " + "; ".join(user_topics[:5]) + ". The assistant helped with these requests."
-                        messages[:] = [
-                            system_msg,
-                            {"role": "user", "content": f"Previous conversation summary:\n{summary}"},
-                            {"role": "assistant", "content": "Understood. I have the context. How can I continue helping?"},
-                        ] + recent
-                        console.print(f"[green]✓ Auto-compacted {len(middle)} messages into a summary.[/green]\n")
+                    ContextPruner.summarize_old_messages(messages)
+                    console.print("[green]✓ Auto-compacted messages into a summary.[/green]\n")
                 elif dropped_count > 0:
                     console.print(f"[green]✓ Pruned attached contexts from {dropped_count} past messages to save space.[/green]\n")
 
@@ -446,271 +436,34 @@ async def main_loop():
                 context_manager.update(estimated_total)
 
             # ── Agent Loop ──────────────────────────────────────────────────
-            while True:
-                if is_auto_mode:
-                    auto_iteration_count += 1
-                    if auto_iteration_count > max_auto_iterations:
-                        console.print(f"  [{Theme.WARNING}]⚠️  Autonomous mode reached iteration limit ({max_auto_iterations}). Exiting auto mode.[/{Theme.WARNING}]")
-                        is_auto_mode = False
-                        auto_approve = args.yolo or config.get("auto_approve", False)
-                        messages.append({
-                            "role": "user",
-                            "content": f"You have reached the maximum number of autonomous iterations ({max_auto_iterations}). Please provide a brief summary of what you have accomplished and what remains."
-                        })
-                        auto_iteration_count = 0
-                        # Continue to let it generate the summary
-
-                full_content = ""
-                accumulated_tool_calls = {}
-
-                # Build spinner text
-                spinner_label = random.choice(
-                    [
-                        "Thinking...",
-                        "Analyzing...",
-                        "Reasoning...",
-                        "Processing...",
-                        "Considering...",
-                        "Exploring...",
-                        "Synthesizing...",
-                    ]
-                )
-                if is_auto_mode:
-                    spinner_display = Spinner("dots2", text=Text(f" [Step {auto_iteration_count}/{max_auto_iterations}] {spinner_label}", style=f"{Theme.MUTED} italic"), style=f"{Theme.PRIMARY} bold")
-                else:
-                    spinner_display = Spinner("dots2", text=Text(f" {spinner_label}", style=f"{Theme.MUTED} italic"), style=f"{Theme.PRIMARY} bold")
-
-                try:
-                    with Live(
-                        spinner_display,
-                        console=console,
-                        refresh_per_second=8,
-                    ) as live:
-                        stream = await _create_api_stream(
-                            client, messages, get_active_model(), active_tools
-                        )
-
-                        api_usage = None
-
-                        async for chunk in stream:
-                            # Parse API-reported usage from the final chunk
-                            if hasattr(chunk, "usage") and chunk.usage:
-                                api_usage = chunk.usage
-
-                            delta = (
-                                chunk.choices[0].delta if chunk.choices else None
-                            )
-                            if not delta:
-                                continue
-
-                            # ── Content tokens ──
-                            if delta.content:
-                                full_content += delta.content
-                                # Live-render Markdown in a panel only if there's actual text
-                                if full_content.strip():
-                                    try:
-                                        # Prepend styled AIZEN badge before the markdown
-                                        display_content = f"**◆ AIZEN:** {full_content}"
-                                        rendered = Markdown(display_content)
-                                        live.update(rendered)
-                                    except Exception:
-                                        # Fallback for incomplete markdown
-                                        display_text = Text.from_markup(f"{Theme.BADGE} {full_content}")
-                                        live.update(display_text)
-
-                            # ── Tool call tokens ──
-                            if delta.tool_calls:
-                                for tc in delta.tool_calls:
-                                    idx = tc.index
-                                    if idx not in accumulated_tool_calls:
-                                        accumulated_tool_calls[idx] = {
-                                            "id": "",
-                                            "name": "",
-                                            "arguments": "",
-                                            "type": "function",
-                                        }
-                                    if tc.id:
-                                        accumulated_tool_calls[idx]["id"] = tc.id
-                                    if tc.function:
-                                        if tc.function.name:
-                                            accumulated_tool_calls[idx][
-                                                "name"
-                                            ] += tc.function.name
-                                        if tc.function.arguments:
-                                            accumulated_tool_calls[idx][
-                                                "arguments"
-                                            ] += tc.function.arguments
-
-                                # Update spinner with tool info
-                                names = [
-                                    v["name"]
-                                    for v in accumulated_tool_calls.values()
-                                    if v["name"]
-                                ]
-                                if names and not full_content.strip():
-                                    tool_text = Text()
-                                    tool_text.append("  ◆ ", style=f"bold {Theme.ACCENT}")
-                                    tool_text.append("Invoking ", style=f"{Theme.TEXT}")
-                                    tool_text.append(
-                                        f"{', '.join(names)}",
-                                        style=f"bold {Theme.ACCENT}",
-                                    )
-                                    tool_text.append(" ...", style=f"{Theme.MUTED}")
-                                    live.update(tool_text)
-
-                except AuthenticationError:
-                    logger.error("Authentication failed — invalid API key")
-                    console.print(
-                        f"\n  [bold {Theme.ERROR}]✖ Authentication Error[/bold {Theme.ERROR}] [{Theme.TEXT}]Invalid API key.[/{Theme.TEXT}]"
-                    )
-                    console.print(
-                        f"  [{Theme.MUTED}]↳ Run with --reset-key to enter a new key.[/{Theme.MUTED}]"
-                    )
-                    break
-                except OpenAIRateLimitError:
-                    logger.warning("Rate limited by API")
-                    console.print(
-                        f"\n  [bold {Theme.ERROR}]✖ Rate Limited[/bold {Theme.ERROR}] [{Theme.TEXT}]Too many requests.[/{Theme.TEXT}]"
-                    )
-                    console.print(
-                        f"  [{Theme.MUTED}]↳ Wait a moment and try again, or switch models.[/{Theme.MUTED}]"
-                    )
-                    break
-                except APITimeoutError:
-                    logger.warning("API request timed out")
-                    console.print(
-                        f"\n  [bold {Theme.ERROR}]✖ Timeout[/bold {Theme.ERROR}] [{Theme.TEXT}]The request timed out.[/{Theme.TEXT}]"
-                    )
-                    console.print(
-                        f"  [{Theme.MUTED}]↳ Check your internet connection and try again.[/{Theme.MUTED}]"
-                    )
-                    break
-                except OpenAIConnectionError:
-                    logger.warning("API connection failed")
-                    console.print(
-                        f"\n  [bold {Theme.ERROR}]✖ Connection Error[/bold {Theme.ERROR}] [{Theme.TEXT}]Could not reach the API.[/{Theme.TEXT}]"
-                    )
-                    console.print(
-                        f"  [{Theme.MUTED}]↳ Check your internet connection or API base URL.[/{Theme.MUTED}]"
-                    )
-                    break
-                except BadRequestError as e:
-                    logger.error("Bad request to API: %s", e)
-                    console.print(f"\n  [bold {Theme.ERROR}]✖ Bad Request[/bold {Theme.ERROR}] [{Theme.TEXT}]{e}[/{Theme.TEXT}]")
-                    console.print(
-                        f"  [{Theme.MUTED}]↳ This usually means the model ID is invalid or context length exceeded.[/{Theme.MUTED}]"
-                    )
-                    break
-                except Exception as e:
-                    logger.error("Unexpected API error: %s", e)
-                    console.print(f"\n  [bold {Theme.ERROR}]✖ API Error[/bold {Theme.ERROR}] [{Theme.TEXT}]{e}[/{Theme.TEXT}]")
-                    error_str = str(e).lower()
-                    if "401" in error_str or "unauthorized" in error_str:
-                        console.print(
-                            f"  [{Theme.MUTED}]↳ API key may be invalid. Run with --reset-key[/{Theme.MUTED}]"
-                        )
-                    elif "429" in error_str or "rate" in error_str:
-                        console.print(
-                            f"  [{Theme.MUTED}]↳ Rate limited. Wait a moment and retry.[/{Theme.MUTED}]"
-                        )
-                    elif "timeout" in error_str:
-                        console.print(
-                            f"  [{Theme.MUTED}]↳ Request timed out. Check your connection.[/{Theme.MUTED}]"
-                        )
-                    break
-                except (asyncio.CancelledError, KeyboardInterrupt):
-                    logger.warning("Generation cancelled by user")
-                    console.print(f"\n  [{Theme.WARNING}]⚡ Generation cancelled.[/{Theme.WARNING}]")
-                    break
-
-                # Track tokens — prefer API-reported usage, fall back to estimation
-                if api_usage and hasattr(api_usage, "prompt_tokens"):
-                    token_tracker.add_api_usage(
-                        api_usage.prompt_tokens or 0,
-                        api_usage.completion_tokens or 0,
-                    )
-                    context_manager.update(
-                        (api_usage.prompt_tokens or 0) + (api_usage.completion_tokens or 0)
-                    )
-                elif full_content:
-                    estimated_input = context_manager.estimate_messages_tokens(
-                        messages, token_tracker.estimate_tokens
-                    )
-                    estimated_output = token_tracker.estimate_tokens(full_content)
-                    token_tracker.add_usage(estimated_input, estimated_output)
-
-                # Build tool calls list
-                tool_calls_list: list[dict[str, Any]] = []
-                for idx in sorted(accumulated_tool_calls.keys()):
-                    tc = accumulated_tool_calls[idx]
-                    tool_calls_list.append(
-                        {
-                            "id": tc["id"],
-                            "type": "function",
-                            "function": {
-                                "name": tc["name"],
-                                "arguments": tc["arguments"],
-                            },
-                        }
-                    )
-
-                # Add assistant message to history
-                assistant_msg: dict[str, Any] = {
-                    "role": "assistant",
-                    "content": full_content or "",
-                }
-                if tool_calls_list:
-                    assistant_msg["tool_calls"] = tool_calls_list
-                messages.append(assistant_msg)
-
-                # If no tool calls, we're done
-                if not tool_calls_list:
-                    break
-
-                # Execute tool calls in parallel
-                async def _exec_tool(tc_dict):
-                    func_name = tc_dict["function"]["name"]
-                    if func_name.startswith("mcp_"):
-                        try:
-                            args = json.loads(tc_dict["function"]["arguments"])
-                            result = await mcp_manager.call_tool(func_name, args)
-                        except json.JSONDecodeError:
-                            result = f"Error: Invalid JSON arguments for {func_name}."
-                    else:
-                        func_struct = Struct(**tc_dict["function"])
-                        tc_struct = Struct(
-                            id=tc_dict["id"],
-                            type=tc_dict["type"],
-                            function=func_struct,
-                        )
-                        result = await asyncio.to_thread(execute_tool, tc_struct, auto_approve)
-
-                    return {
-                        "role": "tool",
-                        "tool_call_id": tc_dict["id"],
-                        "name": func_name,
-                        "content": truncate_output(result),
-                    }
-
-                tool_results = await asyncio.gather(
-                    *[_exec_tool(tc) for tc in tool_calls_list],
-                    return_exceptions=True,
-                )
-                # Handle individual tool failures gracefully
-                for i, result in enumerate(tool_results):
-                    if isinstance(result, Exception):
-                        logger.error("Tool execution failed: %s", result)
-                        tool_results[i] = {
-                            "role": "tool",
-                            "tool_call_id": tool_calls_list[i]["id"],
-                            "name": tool_calls_list[i]["function"]["name"],
-                            "content": f"Error: Tool execution failed — {type(result).__name__}: {result}",
-                        }
-                messages.extend(tool_results)
-
-                # Continue the loop — model processes tool results
-
-            # Footer is now handled by the persistent bottom_toolbar
+            runner = AgentRunner(
+                client=client,
+                active_tools=active_tools,
+                context_manager=context_manager,
+                token_tracker=token_tracker,
+                mcp_manager=mcp_manager,
+                auto_approve=auto_approve,
+                is_auto_mode=is_auto_mode,
+                auto_iteration_count=auto_iteration_count,
+                max_auto_iterations=max_auto_iterations,
+            )
+            
+            try:
+                await runner.run_turn(messages)
+                
+                # Update state back from runner (if it changed during auto mode)
+                is_auto_mode = runner.is_auto_mode
+                auto_iteration_count = runner.auto_iteration_count
+            except Exception as e:
+                logger.error("Unexpected API error: %s", e)
+                console.print(f"\n  [bold {Theme.ERROR}]✖ API Error[/bold {Theme.ERROR}] [{Theme.TEXT}]{e}[/{Theme.TEXT}]")
+                error_str = str(e).lower()
+                if "401" in error_str or "unauthorized" in error_str:
+                    console.print(f"  [{Theme.MUTED}]↳ API key may be invalid. Run with --reset-key[/{Theme.MUTED}]")
+                elif "429" in error_str or "rate" in error_str:
+                    console.print(f"  [{Theme.MUTED}]↳ Rate limited. Wait a moment and retry.[/{Theme.MUTED}]")
+                elif "timeout" in error_str:
+                    console.print(f"  [{Theme.MUTED}]↳ Request timed out. Check your connection.[/{Theme.MUTED}]")
 
         except (KeyboardInterrupt, EOFError):
             # Auto-save on interrupt
