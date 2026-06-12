@@ -10,6 +10,7 @@ Extracted from main.py to enable:
 import asyncio
 import json
 import random
+import re
 from typing import Any
 
 from rich.live import Live
@@ -159,7 +160,11 @@ class AgentRunner:
                         full_content += delta.content
                         if full_content.strip():
                             try:
-                                display_content = f"**◆ AIZEN:** {full_content}"
+                                # Strip reasoning/thought tags for cleaner UI display
+                                cleaned_content = re.sub(r'<think>.*?(?:</think>|$)', '', full_content, flags=re.DOTALL)
+                                cleaned_content = re.sub(r'<\|channel>thought.*?(?:<channel\|>|$)', '', cleaned_content, flags=re.DOTALL)
+
+                                display_content = f"**◆ AIZEN:** {cleaned_content.strip()}"
                                 rendered = Markdown(display_content)
                                 live.update(rendered)
                             except Exception:
@@ -192,7 +197,7 @@ class AgentRunner:
                             tool_text.append(" ...", style=f"{Theme.MUTED}")
                             live.update(tool_text)
 
-        except Exception as e:
+        except Exception:
             # Re-raise — let the caller (main_loop) handle specific exception types
             raise
 

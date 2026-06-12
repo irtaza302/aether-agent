@@ -237,7 +237,7 @@ class BackupManager:
             logger.debug("Cleanup backups failed: %s", e)
 
 
-def truncate_output(text: str, max_chars: int = 4000) -> str:
+def truncate_output(text: str, max_chars: int = 100000) -> str:
     if len(text) <= max_chars:
         return text
     half = max_chars // 2
