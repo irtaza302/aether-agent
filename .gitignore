@@ -1,5 +1,7 @@
 venv/
 .venv/
+.agents/
+ORIGINAL_REQUEST.md
 __pycache__/
 *.pyc
 .env
