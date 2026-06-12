@@ -1,6 +1,5 @@
 """Tests for aizen.retry module."""
 
-import asyncio
 from unittest.mock import patch
 
 import pytest
@@ -23,16 +22,16 @@ class TestRetryDelay:
 
 
 class TestIsRetryable503:
-    class FakeException(Exception):
+    class FakeError(Exception):
         def __init__(self, status_code=None):
             if status_code:
                 self.status_code = status_code
             super().__init__("error")
 
     def test_is_503(self):
-        assert _is_retryable_503(self.FakeException(503)) is True
-        assert _is_retryable_503(self.FakeException(404)) is False
-        assert _is_retryable_503(self.FakeException()) is False
+        assert _is_retryable_503(self.FakeError(503)) is True
+        assert _is_retryable_503(self.FakeError(404)) is False
+        assert _is_retryable_503(self.FakeError()) is False
         assert _is_retryable_503(ValueError("test")) is False
 
 
@@ -74,7 +73,7 @@ class TestRetrySync:
 
         with pytest.raises(ValueError, match="always fail"):
             func()
-        
+
         assert attempts == 3
         assert mock_sleep.call_count == 2
         mock_sleep.assert_any_call(1.0)
@@ -130,10 +129,10 @@ class TestRetryAsync:
 
         with pytest.raises(ValueError, match="always fail"):
             await func()
-        
+
         assert attempts == 3
         assert mock_sleep.call_count == 2
-        
+
     @pytest.mark.asyncio
     async def test_async_openai_default_exceptions(self):
         @retry_with_backoff(max_retries=1, jitter=False)

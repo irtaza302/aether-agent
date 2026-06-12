@@ -7,7 +7,7 @@ import json
 
 from rich.text import Text
 
-from ..config import Theme, console
+from ..config import console
 from ..logging_config import logger
 from ..plugins import plugin_manager
 from ..utils import truncate_output

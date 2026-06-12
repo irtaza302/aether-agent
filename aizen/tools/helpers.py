@@ -5,7 +5,6 @@ diff rendering, file detection, fuzzy matching, and syntax validation.
 
 import ast
 import difflib
-import fnmatch
 import json
 import os
 import re
@@ -17,13 +16,9 @@ import time
 
 import questionary
 from prompt_toolkit.styles import Style
-from rich.panel import Panel
-from rich.syntax import Syntax
 from rich.text import Text
 
 from ..config import (
-    DANGEROUS_PATTERNS,
-    SAFE_COMMAND_PREFIXES,
     Theme,
     console,
     load_config,

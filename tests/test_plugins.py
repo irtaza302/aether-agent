@@ -1,7 +1,5 @@
 """Tests for aizen.plugins module."""
 
-import json
-import os
 from unittest.mock import patch
 
 import pytest
@@ -42,7 +40,7 @@ def execute_tool(tool_call, auto_approve=False):
     plugin_path.write_text(plugin_content)
 
     pm = PluginManager()
-    
+
     assert "my_plugin" in pm.plugins
     assert len(pm.get_tools()) == 1
     assert pm.get_tools()[0]["function"]["name"] == "dummy_tool"
@@ -75,7 +73,7 @@ def get_tools():
 def test_plugin_manager_ignores_underscores_and_non_py(temp_plugins_dir):
     (temp_plugins_dir / "_ignored.py").write_text("invalid python code")
     (temp_plugins_dir / "not_python.txt").write_text("hello")
-    
+
     pm = PluginManager()
     assert len(pm.plugins) == 0
 
@@ -96,7 +94,7 @@ def execute_tool(tool_call, auto_approve=False):
         type="function",
         function=Struct(name="fail_tool", arguments="{}")
     )
-    
+
     result = pm.execute_tool(tool_call)
     assert "Error executing plugin tool fail_tool: Plugin failed" in result
 
@@ -108,7 +106,7 @@ def test_plugin_manager_unhandled_tool(temp_plugins_dir):
         type="function",
         function=Struct(name="unknown_tool", arguments="{}")
     )
-    
+
     # Should return None for unhandled tools
     result = pm.execute_tool(tool_call)
     assert result is None

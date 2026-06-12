@@ -11,8 +11,8 @@ import urllib.parse
 import urllib.request
 
 from ..logging_config import logger
-from .helpers import is_binary_file
 from ..utils import load_gitignore_patterns, should_ignore
+from .helpers import is_binary_file
 
 
 def list_directory(path: str = ".") -> str:

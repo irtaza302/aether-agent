@@ -1,15 +1,10 @@
 """Tests for aizen.tools package."""
 
-import json
 import os
 from unittest.mock import patch
 
-from aizen.tools import backup_manager, execute_tool
-from aizen.tools.helpers import detect_language, is_binary_file, try_repair_json
+from aizen.tools import backup_manager
 from aizen.tools.file_ops import read_file, replace_file_content, write_file_with_diff
-from aizen.tools.commands import is_command_safe, run_command_impl
-from aizen.tools.search import find_files, grep_search, list_directory
-from aizen.utils import Struct
 
 
 class TestReadFile:

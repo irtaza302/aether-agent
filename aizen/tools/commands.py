@@ -61,10 +61,10 @@ class PersistentTerminal:
             self.stderr_buf.clear()
 
             marker_str = f"{self.marker}_{uuid.uuid4().hex[:8]}"
-            
+
             # The payload. We echo the exit code and the current working directory.
             cmd_payload = f"{command}\n__aizen_exit=$?; echo \"{marker_str}:$__aizen_exit:$(pwd)\"\n"
-            
+
             try:
                 self.proc.stdin.write(cmd_payload)
                 self.proc.stdin.flush()
@@ -224,7 +224,7 @@ def run_command_impl(command: str, auto_approve: bool = False, timeout: int = 12
                 output = stderr_output
         if exit_code != 0:
             output += f"\n[Exit code: {exit_code}]"
-        
+
         return output.strip() if output.strip() else f"Command completed (exit code {exit_code})"
 
     except Exception as e:

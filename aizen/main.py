@@ -6,28 +6,20 @@ Aizen AI Agent — A professional-grade AI coding assistant for your terminal.
 import argparse
 import asyncio
 import base64
-import json
 import mimetypes
 import os
-import random
 import re
 import subprocess
 import sys
-from typing import Any
 
-from openai import APIConnectionError as OpenAIConnectionError
-from openai import APITimeoutError, AsyncOpenAI, AuthenticationError, BadRequestError
-from openai import RateLimitError as OpenAIRateLimitError
+from openai import AsyncOpenAI
 from prompt_toolkit import PromptSession
 from prompt_toolkit.filters import completion_is_selected, has_completions
 from prompt_toolkit.formatted_text import FormattedText
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.styles import Style
-from rich.live import Live
-from rich.markdown import Markdown
-from rich.spinner import Spinner
-from rich.text import Text
 
+from .agent import AgentRunner
 from .commands import AizenCompleter, handle_slash_command
 from .config import (
     AIZEN_ASCII,
@@ -52,9 +44,8 @@ from .mcp import MCPManager
 from .plugins import plugin_manager
 from .retry import retry_with_backoff
 from .session import save_session
-from .tools import backup_manager, execute_tool, tools
-from .agent import AgentRunner
-from .utils import Struct, TokenTracker, fetch_url_content, generate_directory_tree, truncate_output
+from .tools import backup_manager, tools
+from .utils import TokenTracker, fetch_url_content, generate_directory_tree
 
 
 def inject_file_context(user_input: str) -> str:
@@ -420,7 +411,7 @@ async def main_loop():
             # ── Auto-compact if context is critically full ──
             if context_manager.needs_auto_compact() and len(messages) > 4:
                 console.print("[dim yellow]⚡ Context limit reached. Attempting smart pruning...[/dim yellow]")
-                
+
                 dropped_count = ContextPruner.prune_attached_contexts(messages)
                 estimated_total = context_manager.estimate_messages_tokens(messages, token_tracker.estimate_tokens)
                 context_manager.update(estimated_total)
@@ -447,10 +438,10 @@ async def main_loop():
                 auto_iteration_count=auto_iteration_count,
                 max_auto_iterations=max_auto_iterations,
             )
-            
+
             try:
                 await runner.run_turn(messages)
-                
+
                 # Update state back from runner (if it changed during auto mode)
                 is_auto_mode = runner.is_auto_mode
                 auto_iteration_count = runner.auto_iteration_count

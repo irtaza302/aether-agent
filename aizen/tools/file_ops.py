@@ -14,6 +14,9 @@ from rich.syntax import Syntax
 from ..config import Theme, console
 from ..logging_config import logger
 from .helpers import (
+    MAX_FILE_SIZE_BYTES,
+    MAX_FILE_SIZE_WARNING,
+    _ask_permission,
     backup_manager,
     check_git_dirty,
     detect_language,
@@ -23,9 +26,6 @@ from .helpers import (
     render_diff,
     terminal_lock,
     validate_syntax,
-    _ask_permission,
-    MAX_FILE_SIZE_BYTES,
-    MAX_FILE_SIZE_WARNING,
 )
 
 # Global lock to prevent race conditions when multiple tools write to files concurrently

@@ -6,9 +6,7 @@ import subprocess
 from datetime import datetime
 
 import questionary
-
 from prompt_toolkit.completion import Completer, Completion
-from prompt_toolkit import PromptSession
 from rich.table import Table
 
 from .config import (

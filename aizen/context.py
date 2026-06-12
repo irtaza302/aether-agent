@@ -184,7 +184,7 @@ class ContextPruner:
         """
         import re
         dropped_count = 0
-        
+
         # Keep the system prompt and the last couple of turns intact
         if len(messages) <= 3:
             return 0
@@ -200,7 +200,7 @@ class ContextPruner:
                 if old_content != new_content:
                     msg["content"] = new_content
                     dropped_count += 1
-                    
+
         return dropped_count
 
     @staticmethod
@@ -215,20 +215,20 @@ class ContextPruner:
         system_msg = messages[0]
         recent = messages[-recent_count:]
         middle = messages[1:-recent_count]
-        
+
         user_topics = [
-            m["content"][:100].replace('\n', ' ') 
-            for m in middle 
+            m["content"][:100].replace('\n', ' ')
+            for m in middle
             if m.get("role") == "user" and m.get("content")
         ]
-        
+
         summary = "Previous conversation summary: The user and assistant discussed " + "; ".join(user_topics[:5]) + ". The assistant helped with these requests."
-        
+
         messages[:] = [
             system_msg,
             {"role": "user", "content": f"Previous conversation summary:\n{summary}"},
             {"role": "assistant", "content": "Understood. I have the context. How can I continue helping?"},
         ] + recent
-        
+
         return summary
 
