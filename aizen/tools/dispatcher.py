@@ -299,6 +299,32 @@ tools = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "semantic_search",
+            "description": "Programmatically retrieve relevant code snippets based on semantic search query.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "The semantic search query."
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Number of results to return.",
+                        "default": 5
+                    },
+                    "path": {
+                        "type": "string",
+                        "description": "Restrict search to a specific directory or file path."
+                    }
+                },
+                "required": ["query"]
+            }
+        }
+    },
 ]
 
 
@@ -426,6 +452,17 @@ def execute_tool(tool_call, auto_approve: bool = False) -> str:
         tool_label.append(f" → {filepath or '?'}", style="dim")
         console.print(tool_label)
         return truncate_output(get_file_outline(filepath))
+
+    elif func_name == "semantic_search":
+        query = str(args.get("query", ""))
+        limit = args.get("limit", 5)
+        path = args.get("path")
+        tool_label.append(f" → '{query or '?'}' (limit={limit}, path={path})", style="dim")
+        console.print(tool_label)
+        from ..rag import semantic_search_tool, get_global_vector_store, get_global_embedding_generator
+        store = get_global_vector_store()
+        embedder = get_global_embedding_generator()
+        return semantic_search_tool(store, embedder, query=query, limit=limit, path=path)
 
     else:
         # Check if a plugin handles this tool

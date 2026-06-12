@@ -45,6 +45,8 @@ SLASH_COMMANDS = [
     ("/commit", "Auto-generate and commit changes"),
     ("/diff", "Show all uncommitted changes"),
     ("/auto", "Enter autonomous agentic mode for a complex task"),
+    ("/search", "Search the codebase using semantic (RAG) search"),
+    ("/reindex", "Reindex the codebase for semantic search"),
 ]
 
 # In-memory checkpoint storage for conversation branching
@@ -67,7 +69,7 @@ class AizenCompleter(Completer):
         if stripped.startswith("/"):
             if " " not in stripped:
                 query = stripped.lower()
-                cmds_with_args = {"/model", "/save", "/load", "/export", "/checkpoint", "/restore"}
+                cmds_with_args = {"/model", "/save", "/load", "/export", "/checkpoint", "/restore", "/search", "/reindex"}
                 for cmd, description in SLASH_COMMANDS:
                     if cmd.startswith(query):
                         completion_text = cmd + " " if cmd in cmds_with_args else cmd
@@ -284,6 +286,11 @@ async def handle_slash_command(
         help_table.add_row(f"[bold {Theme.MUTED}]── Git ──[/bold {Theme.MUTED}]", "")
         help_table.add_row("  🔀 /commit", "Auto-generate and commit changes")
         help_table.add_row("  📊 /diff", "Show all uncommitted changes")
+
+        # ── Search & RAG ──
+        help_table.add_row(f"[bold {Theme.MUTED}]── Search & RAG ──[/bold {Theme.MUTED}]", "")
+        help_table.add_row("  🔍 /search [query]", "Search the codebase using semantic (RAG) search")
+        help_table.add_row("  🔄 /reindex [dir]", "Reindex the codebase for semantic search")
 
         # ── Agent ──
         help_table.add_row(f"[bold {Theme.MUTED}]── Agent ──[/bold {Theme.MUTED}]", "")
@@ -729,6 +736,23 @@ async def handle_slash_command(
             console.print(f"  [{Theme.ERROR}]Error: Not a git repository or git command failed.[/{Theme.ERROR}]\n")
         except Exception as e:
             console.print(f"  [{Theme.ERROR}]Error showing diff: {e}[/{Theme.ERROR}]\n")
+
+    elif cmd == "/search":
+        from .rag import get_global_vector_store, get_global_embedding_generator, SlashCommandRunner
+        runner = SlashCommandRunner(get_global_vector_store(), get_global_embedding_generator())
+        runner.run(command_str, console)
+        console.print()
+
+    elif cmd == "/reindex":
+        import asyncio
+        from .rag import reindex_directory
+        target_dir = arg if arg else "."
+        console.print(f"  [{Theme.MUTED}]Re-indexing codebase directory '{target_dir}' in background...[/{Theme.MUTED}]")
+        try:
+            await asyncio.to_thread(reindex_directory, target_dir)
+            console.print(f"  [{Theme.SUCCESS}]✓ Reindexing complete.[/{Theme.SUCCESS}]\n")
+        except Exception as e:
+            console.print(f"  [{Theme.ERROR}]Error during reindexing: {e}[/{Theme.ERROR}]\n")
 
     else:
         console.print(

@@ -5,9 +5,10 @@ All notable changes to the Aizen AI CLI will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.5.0] - 2026-06-12
 
 ### Added
+- **Local Codebase Semantic Search (RAG)**: Added automatic codebase indexing with local embeddings and a SQLite vector cache. Accessible via `/search` and `/reindex` commands, and automatically available to the agent via the `semantic_search` tool.
 - **Plugin System**: Developers can now add custom tools to Aizen by placing python scripts in `~/.aizen/plugins/`.
 - **MCP Support**: Integration with the Model Context Protocol (MCP) to load external servers and tools.
 - **Auto-Compaction**: Automatic context pruning when the conversation exceeds 80% of the token limit to prevent massive API bills and token exhaustion.

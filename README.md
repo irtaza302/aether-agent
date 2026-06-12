@@ -12,6 +12,7 @@ Aizen is a powerful, asynchronous AI assistant that integrates seamlessly into y
 - **Cost‑Aware Usage** — Real‑time cost estimation for all major LLMs.
 - **Persistent Sessions** — Save and restore conversations with checkpoints.
 - **Rich Visual Feedback** — Stream responses with live previews and animated thought indicators.
+- **Semantic Codebase Search** — Fast local RAG (Retrieval-Augmented Generation) using the `/search` command.
 - **Extensible Architecture** — Custom plugins and project‑specific rules tailor Aizen to your workflow.
 - **Comprehensive Logging** — Rotating logs with optional verbose output for debugging.
 
@@ -32,6 +33,9 @@ Aizen is a powerful, asynchronous AI assistant that integrates seamlessly into y
 ### Vision Support
 - Native image handling and encoding for Vision APIs (e.g., GPT‑4o, Claude 3.5 Sonnet).
 
+### Local Codebase RAG
+- Intelligent semantic search across your entire codebase using local embeddings and SQLite vector caching, accessible via the `/search` command and available to the agent.
+
 ### Real‑Time Command Streaming
 - Background command execution with async streaming of stdout/stderr; use `run_command --background`.
 
@@ -48,8 +52,10 @@ Aizen is a powerful, asynchronous AI assistant that integrates seamlessly into y
 - Current cost estimate shown in the CLI status bar.
 - Supports Anthropic (Claude 3.5/3.7 Sonnet, Opus, Haiku), Google (Gemini 2.5 Pro/Flash), and OpenAI (GPT‑4o, o1, o3‑mini).
 
-## 📌 Session Management
+## 📌 Session Management & Search
 
+- `/search [query]` — Perform semantic search across your codebase.
+- `/reindex [dir]` — Manually trigger indexing for local semantic search.
 - `/checkpoint [name]` — Save conversation snapshots.
 - `/restore [name]` — Restore a previous checkpoint.
 
