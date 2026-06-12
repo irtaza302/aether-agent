@@ -2,21 +2,23 @@
 Local Codebase Semantic Search (RAG) feature implementation.
 """
 
-import os
-import sqlite3
-import json
+import asyncio
 import hashlib
+import json
+import os
 import re
+import sqlite3
 import struct
 import threading
 import time
-import asyncio
-from rich.console import Console
-from openai import OpenAI, AsyncOpenAI
-import openai
 
-from .config import load_config, Theme
+import openai
+from openai import AsyncOpenAI, OpenAI
+from rich.console import Console
+
+from .config import load_config
 from .utils import load_gitignore_patterns, should_ignore
+
 
 # --- Exceptions ---
 class EmbeddingError(Exception):
@@ -68,7 +70,7 @@ async def generate_embedding_async(text: str) -> list[float]:
     api_key = resolve_api_key(config)
     api_base = resolve_api_base(config)
     model = resolve_model(config)
-    
+
     # Check if the api key is a test/mock key
     is_test = False
     if api_key:
@@ -83,11 +85,11 @@ async def generate_embedding_async(text: str) -> list[float]:
             raise AuthenticationError("Invalid API key")
         generator = EmbeddingGenerator(api_key=None)
         return generator._mock_vector(text)
-        
+
     if not api_key:
         generator = EmbeddingGenerator(api_key=None)
         return generator._mock_vector(text)
-        
+
     try:
         client = AsyncOpenAI(api_key=api_key, base_url=api_base)
         kwargs = {
@@ -96,7 +98,7 @@ async def generate_embedding_async(text: str) -> list[float]:
         }
         if "text-embedding-3" in model:
             kwargs["dimensions"] = 1536
-            
+
         response = await client.embeddings.create(**kwargs)
         return response.data[0].embedding
     except openai.AuthenticationError as e:
@@ -116,7 +118,7 @@ class EmbeddingGenerator:
             self.api_key = None
         else:
             self.api_key = api_key if api_key is not None else resolve_api_key(config)
-            
+
         self.api_base = api_base if api_base is not None else resolve_api_base(config)
         self.model = model if model is not None else resolve_model(config)
         self.dimension = dimension
@@ -126,20 +128,20 @@ class EmbeddingGenerator:
         dimension = self.dimension
         if not text:
             return [0.0] * dimension
-        
+
         v = [0.0] * dimension
         for i in range(dimension):
-            h = hashlib.md5(f"base_{i}".encode("utf-8")).digest()
+            h = hashlib.md5(f"base_{i}".encode()).digest()
             val = int.from_bytes(h, "big") / (2**128 - 1)
             v[i] = (val - 0.5) * 0.05
-            
+
         words = re.findall(r"\w+", text.lower())
         for w in words:
             for seed in (1, 2, 3):
-                h = hashlib.md5(f"{w}_{seed}".encode("utf-8")).digest()
+                h = hashlib.md5(f"{w}_{seed}".encode()).digest()
                 dim = int.from_bytes(h, "big") % dimension
                 v[dim] += 1.0
-                
+
         mag = sum(x*x for x in v) ** 0.5
         if mag > 0:
             v = [x / mag for x in v]
@@ -197,11 +199,11 @@ class EmbeddingGenerator:
             }
             if "text-embedding-3" in self.model:
                 kwargs["dimensions"] = self.dimension
-                
+
             response = client.embeddings.create(**kwargs)
             data = sorted(response.data, key=lambda x: x.index)
             results = [item.embedding for item in data]
-            
+
             for i in range(len(results)):
                 v = results[i]
                 if len(v) != self.dimension:
@@ -250,11 +252,11 @@ class Chunker:
         chunks = []
         if not lines:
             return chunks
-        
+
         current_lines = []
         current_len = 0
         start_line = 1
-        
+
         for idx, line in enumerate(lines, 1):
             line_len = len(line) + 1
             if line_len > self.chunk_size and not current_lines:
@@ -267,7 +269,7 @@ class Chunker:
                     "token_count": len(line[:self.chunk_size]) // 4
                 })
                 continue
-                
+
             if current_len + line_len > self.chunk_size and current_lines:
                 chunk_text = "\n".join(current_lines)
                 chunks.append({
@@ -289,10 +291,10 @@ class Chunker:
                 current_lines = overlap_lines
                 current_len = overlap_len
                 start_line = idx - len(current_lines)
-                
+
             current_lines.append(line)
             current_len += line_len
-            
+
         if current_lines:
             chunk_text = "\n".join(current_lines)
             chunks.append({
@@ -312,12 +314,12 @@ class Chunker:
                 return []
         except OSError:
             return []
-            
+
         if self.is_binary_file(file_path):
             return []
-            
+
         try:
-            with open(file_path, "r", encoding="utf-8") as f:
+            with open(file_path, encoding="utf-8") as f:
                 content = f.read()
         except UnicodeDecodeError:
             # Check if it's a binary file or just bad unicode
@@ -325,13 +327,13 @@ class Chunker:
                 return []
             # Try decoding with errors="ignore"
             try:
-                with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+                with open(file_path, encoding="utf-8", errors="ignore") as f:
                     content = f.read()
             except Exception:
                 return []
         except Exception:
             return []
-            
+
         return self.chunk_text(content, file_path)
 
 # --- SQLite Vector Store Cache ---
@@ -405,14 +407,14 @@ class VectorStore:
         cursor = conn.cursor()
         cursor.execute("SELECT COUNT(*) FROM chunks")
         current_count = cursor.fetchone()[0]
-        
+
         if current_count + len(chunks) > self.max_chunks_limit:
             allowed = self.max_chunks_limit - current_count
             if allowed <= 0:
                 return
             chunks = chunks[:allowed]
             embeddings = embeddings[:allowed]
-            
+
         for idx, (chunk, emb) in enumerate(zip(chunks, embeddings)):
             # Chunks table update/insert
             cursor.execute(
@@ -430,7 +432,7 @@ class VectorStore:
                     "INSERT INTO chunks (file_path, start_line, end_line, text, embedding) VALUES (?, ?, ?, ?, ?)",
                     (chunk["file_path"], chunk["start_line"], chunk["end_line"], chunk["text"], json.dumps(emb))
                 )
-                
+
             # Vector cache table update/insert
             emb_blob = struct.pack(f"{len(emb)}f", *emb)
             cursor.execute(
@@ -455,23 +457,23 @@ class VectorStore:
         cursor = conn.cursor()
         cursor.execute("SELECT file_path, start_line, end_line, text, embedding FROM chunks")
         rows = cursor.fetchall()
-        
+
         results = []
         for row in rows:
             file_path, start_line, end_line, text, emb_str = row
-            
+
             if path_filter:
                 norm_filter = os.path.normpath(path_filter)
                 norm_file = os.path.normpath(file_path)
                 if norm_filter not in norm_file and not norm_file.startswith(norm_filter):
                     continue
-                    
+
             emb = json.loads(emb_str)
             dot_prod = sum(a*b for a, b in zip(query_vector, emb))
             mag_q = sum(a*a for a in query_vector) ** 0.5
             mag_e = sum(b*b for b in emb) ** 0.5
             sim = dot_prod / (mag_q * mag_e) if mag_q > 0 and mag_e > 0 else 0.0
-            
+
             results.append({
                 "file_path": file_path,
                 "start_line": start_line,
@@ -479,20 +481,20 @@ class VectorStore:
                 "text": text,
                 "score": sim
             })
-            
+
         results.sort(key=lambda x: x["score"], reverse=True)
         return results[:top_k]
 
     def sync_workspace(self, workspace_path: str, chunker: Chunker, embedder: EmbeddingGenerator):
         conn = self.conn
         cursor = conn.cursor()
-        
+
         patterns = load_gitignore_patterns()
-        
+
         current_files = {}
         for root, dirs, files in os.walk(workspace_path):
             dirs[:] = [d for d in dirs if not should_ignore(os.path.join(root, d), patterns)]
-            
+
             for file in files:
                 file_path = os.path.join(root, file)
                 if should_ignore(file_path, patterns):
@@ -506,7 +508,7 @@ class VectorStore:
                     mtime = os.path.getmtime(file_path)
                 except OSError:
                     continue
-                    
+
                 try:
                     with open(file_path, "rb") as f:
                         content_bytes = f.read()
@@ -514,33 +516,33 @@ class VectorStore:
                     current_files[file_path] = (content_bytes, file_hash, mtime)
                 except Exception:
                     continue
-                    
+
         cursor.execute("SELECT file_path, file_hash FROM files")
         db_files = {row[0]: row[1] for row in cursor.fetchall()}
-        
+
         for db_file in db_files:
             if db_file not in current_files:
                 cursor.execute("DELETE FROM chunks WHERE file_path=?", (db_file,))
                 cursor.execute("DELETE FROM files WHERE file_path=?", (db_file,))
                 cursor.execute("DELETE FROM vector_cache WHERE file_path=?", (db_file,))
-                
+
         for file_path, (content_bytes, file_hash, mtime) in current_files.items():
             if file_path not in db_files or db_files[file_path] != file_hash:
                 cursor.execute("DELETE FROM chunks WHERE file_path=?", (file_path,))
                 cursor.execute("DELETE FROM vector_cache WHERE file_path=?", (file_path,))
                 cursor.execute("INSERT OR REPLACE INTO files (file_path, file_hash) VALUES (?, ?)", (file_path, file_hash))
-                
+
                 try:
                     text = content_bytes.decode("utf-8", errors="ignore")
                 except Exception:
                     text = ""
                 chunks = chunker.chunk_text(text, file_path)
-                
+
                 if chunks:
                     texts_to_embed = [c["text"] for c in chunks]
                     embeddings = embedder.generate(texts_to_embed)
                     self.save_chunks(chunks, embeddings, file_hash, mtime)
-                    
+
         conn.commit()
 
 # --- Slash Command Runner ---
@@ -548,20 +550,20 @@ class SlashCommandRunner:
     def __init__(self, vector_store: VectorStore, embedder: EmbeddingGenerator):
         self.vector_store = vector_store
         self.embedder = embedder
-        
+
     def run(self, command_line: str, console_obj=None) -> str:
         if console_obj is None:
             console_obj = Console(color_system=None, force_terminal=False)
-            
+
         parts = command_line.split()
         if not parts or parts[0] != "/search":
             return "Invalid command."
-            
+
         args_list = parts[1:]
         if "--help" in args_list or "-h" in args_list:
             console_obj.print("Usage: /search <query> [--limit <n>]")
             return "Help displayed."
-            
+
         limit = 5
         query_parts = []
         i = 0
@@ -581,41 +583,41 @@ class SlashCommandRunner:
             else:
                 query_parts.append(arg)
                 i += 1
-                
+
         query = " ".join(query_parts).strip()
         if not query:
             console_obj.print("Error: Empty search query. Usage: /search <query> [--limit <n>]")
             return "Error"
-            
+
         if limit < 0:
             console_obj.print("Error: Limit must be positive")
             return "Error"
-            
+
         if limit > 10000:
             limit = 1000
-            
+
         try:
             q_emb = self.embedder.generate([query])[0]
         except Exception as e:
             console_obj.print(f"Error generating embedding: {e}")
             return "Error"
-            
+
         try:
             results = self.vector_store.search(q_emb, top_k=limit)
-        except Exception as e:
+        except Exception:
             console_obj.print("No matches found.")
             return "No matches"
-        
+
         if not results:
             console_obj.print("No matches found.")
             return "No matches"
-            
+
         console_obj.print(f"[bold]Search Results for '{query}':[/bold]")
         for idx, res in enumerate(results, 1):
             console_obj.print(f"{idx}. [green]{res['file_path']}[/green] (Lines {res['start_line']}-{res['end_line']}, Score: {res['score']:.4f})")
             snippet_lines = res['text'].splitlines()[:3]
             console_obj.print(f"   [dim]{chr(10).join(snippet_lines)}[/dim]")
-            
+
         return "Success"
 
 # --- Tool helper ---
@@ -630,17 +632,17 @@ def semantic_search_tool(vector_store, embedder, query: str, limit: int = 5, pat
         return json.dumps({"error": "Limit must be a positive integer"})
     if limit > 10000:
         limit = 1000
-        
+
     if path:
         path = os.path.normpath(path)
-        
+
     try:
         q_emb = embedder.generate([query])[0]
     except Exception as e:
         return json.dumps({"error": f"Failed to generate embedding: {str(e)}"})
-        
+
     results = vector_store.search(q_emb, top_k=limit, path_filter=path)
-    
+
     output = {
         "results": [
             {

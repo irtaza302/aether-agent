@@ -738,13 +738,14 @@ async def handle_slash_command(
             console.print(f"  [{Theme.ERROR}]Error showing diff: {e}[/{Theme.ERROR}]\n")
 
     elif cmd == "/search":
-        from .rag import get_global_vector_store, get_global_embedding_generator, SlashCommandRunner
+        from .rag import SlashCommandRunner, get_global_embedding_generator, get_global_vector_store
         runner = SlashCommandRunner(get_global_vector_store(), get_global_embedding_generator())
         runner.run(command_str, console)
         console.print()
 
     elif cmd == "/reindex":
         import asyncio
+
         from .rag import reindex_directory
         target_dir = arg if arg else "."
         console.print(f"  [{Theme.MUTED}]Re-indexing codebase directory '{target_dir}' in background...[/{Theme.MUTED}]")

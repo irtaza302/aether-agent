@@ -459,7 +459,11 @@ def execute_tool(tool_call, auto_approve: bool = False) -> str:
         path = args.get("path")
         tool_label.append(f" → '{query or '?'}' (limit={limit}, path={path})", style="dim")
         console.print(tool_label)
-        from ..rag import semantic_search_tool, get_global_vector_store, get_global_embedding_generator
+        from ..rag import (
+            get_global_embedding_generator,
+            get_global_vector_store,
+            semantic_search_tool,
+        )
         store = get_global_vector_store()
         embedder = get_global_embedding_generator()
         return semantic_search_tool(store, embedder, query=query, limit=limit, path=path)
